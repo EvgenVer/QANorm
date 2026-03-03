@@ -25,6 +25,8 @@ from qanorm.parsers.card_parser import (
     fetch_document_card,
     parse_document_card,
 )
+from qanorm.parsers.html_document_parser import HtmlTextExtractionResult, extract_text_from_html_document
+from qanorm.parsers.pdf_text_parser import PdfTextExtractionResult, extract_text_from_pdf
 from qanorm.repositories import (
     DocumentRepository,
     DocumentSourceRepository,
@@ -58,6 +60,18 @@ class DownloadArtifactsResult:
     html_missing: bool
     pdf_missing: bool
     queued_extract_text_job_id: str | None = None
+
+
+@dataclass(slots=True)
+class ExtractedTextResult:
+    """Result of intermediate text extraction from raw artifacts."""
+
+    status: str
+    chosen_source: str
+    text_length: int
+    needs_ocr: bool
+    saved_snapshot_count: int
+    queued_job_id: str | None = None
 
 
 def get_pipeline_status() -> dict[str, Any]:
@@ -272,6 +286,84 @@ def download_document_artifacts(
     )
 
 
+def extract_document_text(
+    session: Session,
+    *,
+    document_version_id: UUID | str,
+    raw_store: RawFileStore | None = None,
+) -> ExtractedTextResult:
+    """Extract intermediate text from stored HTML and/or PDF raw artifacts."""
+
+    artifact_repository = RawArtifactRepository(session)
+    version_repository = DocumentVersionRepository(session)
+    document_repository = DocumentRepository(session)
+    job_repository = IngestionJobRepository(session)
+    store = raw_store or RawFileStore()
+    version_uuid = UUID(str(document_version_id))
+    version = version_repository.get(version_uuid)
+    if version is None:
+        raise ValueError(f"Document version not found: {document_version_id}")
+
+    document = document_repository.get(version.document_id)
+    if document is None:
+        raise ValueError(f"Document not found for version: {document_version_id}")
+
+    artifacts = artifact_repository.list_for_document_version(version_uuid)
+    html_artifact = next((item for item in artifacts if item.artifact_type is ArtifactType.HTML_RAW), None)
+    pdf_artifact = next((item for item in artifacts if item.artifact_type is ArtifactType.PDF_RAW), None)
+
+    html_result: HtmlTextExtractionResult | None = None
+    pdf_result: PdfTextExtractionResult | None = None
+    saved_snapshots: list[RawArtifact] = []
+
+    if html_artifact is not None:
+        page_html = Path(html_artifact.storage_path).read_text(encoding="utf-8")
+        html_result = extract_text_from_html_document(page_html)
+        snapshot = _persist_text_snapshot_artifact(
+            artifact_repository=artifact_repository,
+            raw_store=store,
+            document_version_id=version_uuid,
+            document_code=document.display_code,
+            snapshot_label="html",
+            text=html_result.text,
+        )
+        if snapshot is not None:
+            saved_snapshots.append(snapshot)
+
+    if pdf_artifact is not None:
+        pdf_result = extract_text_from_pdf(pdf_artifact.storage_path)
+        snapshot = _persist_text_snapshot_artifact(
+            artifact_repository=artifact_repository,
+            raw_store=store,
+            document_version_id=version_uuid,
+            document_code=document.display_code,
+            snapshot_label="pdf",
+            text=pdf_result.combined_text,
+        )
+        if snapshot is not None:
+            saved_snapshots.append(snapshot)
+
+    chosen_source, chosen_text, confidence, needs_ocr = _choose_best_text_source(html_result, pdf_result)
+    version.processing_status = ProcessingStatus.EXTRACTED
+    version.parse_confidence = confidence
+    session.flush()
+
+    next_job = create_job(
+        job_repository,
+        job_type=JobType.RUN_OCR if needs_ocr else JobType.NORMALIZE_DOCUMENT,
+        payload={"document_version_id": str(version_uuid)},
+    )
+
+    return ExtractedTextResult(
+        status="ok",
+        chosen_source=chosen_source,
+        text_length=len(chosen_text),
+        needs_ocr=needs_ocr,
+        saved_snapshot_count=len(saved_snapshots),
+        queued_job_id=str(next_job.id),
+    )
+
+
 def _detect_document_type(document_code: str) -> str:
     code_upper = document_code.upper()
     if code_upper.startswith("СП ") or code_upper.startswith("SP "):
@@ -283,6 +375,28 @@ def _detect_document_type(document_code: str) -> str:
     if code_upper.startswith("ГОСТ") or code_upper.startswith("GOST"):
         return "gost"
     return "unknown"
+
+
+def _choose_best_text_source(
+    html_result: HtmlTextExtractionResult | None,
+    pdf_result: PdfTextExtractionResult | None,
+) -> tuple[str, str, float, bool]:
+    html_text = html_result.text if html_result is not None else ""
+    pdf_text = pdf_result.combined_text if pdf_result is not None else ""
+
+    if html_result is not None and html_result.text_length >= 200:
+        return "html", html_text, 1.0, False
+
+    if pdf_result is not None and pdf_text and not pdf_result.needs_ocr:
+        return "pdf", pdf_text, pdf_result.text_layer_score, False
+
+    if html_result is not None and html_text:
+        return "html", html_text, 0.8, False
+
+    if pdf_result is not None:
+        return "pdf", pdf_text, pdf_result.text_layer_score, pdf_result.needs_ocr
+
+    return "none", "", 0.0, True
 
 
 def _download_text_artifact(
@@ -303,6 +417,28 @@ def _download_text_artifact(
         artifact_type=artifact_type,
         payload=payload,
         source_url=source_url,
+        is_text=True,
+    )
+
+
+def _persist_text_snapshot_artifact(
+    *,
+    artifact_repository: RawArtifactRepository,
+    raw_store: RawFileStore,
+    document_version_id: UUID,
+    document_code: str,
+    snapshot_label: str,
+    text: str,
+) -> RawArtifact | None:
+    return _persist_artifact(
+        artifact_repository=artifact_repository,
+        raw_store=raw_store,
+        document_version_id=document_version_id,
+        document_code=document_code,
+        artifact_type=ArtifactType.PARSED_TEXT_SNAPSHOT,
+        payload=text,
+        source_url=f"snapshot://{snapshot_label}.txt",
+        artifact_name=f"{ArtifactType.PARSED_TEXT_SNAPSHOT.value}_{snapshot_label}",
         is_text=True,
     )
 
