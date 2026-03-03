@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "qanorm"
+version = "0.1.0"
+description = "Stage 1 ingestion pipeline for regulatory documents."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.14.0",
+  "httpx>=0.28.0",
+  "lxml>=5.3.0",
+  "pgvector>=0.3.6",
+  "psycopg[binary]>=3.2.0",
+  "pydantic-settings>=2.7.0",
+  "pymupdf>=1.25.0",
+  "pytesseract>=0.3.13",
+  "pyyaml>=6.0.2",
+  "selectolax>=0.3.26",
+  "sqlalchemy>=2.0.36",
+  "tenacity>=9.0.0",
+  "typer>=0.15.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+  "pytest-cov>=6.0.0",
+]
+
+[project.scripts]
+qanorm = "qanorm.cli.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/qanorm"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
