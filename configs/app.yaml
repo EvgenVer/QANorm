@@ -1,0 +1,5 @@
+app:
+  request_timeout_seconds: 30
+  max_retries: 3
+  rate_limit_per_second: 2.0
+  user_agent: "QANormBot/0.1"
