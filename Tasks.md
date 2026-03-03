@@ -75,76 +75,76 @@
 
 ### Блок C. Структура пакетов и пустые модули
 
-41. Создать директорию `src/qanorm/cli/`.
-42. Создать файл `src/qanorm/cli/__init__.py`.
-43. Создать файл `src/qanorm/cli/main.py`.
-44. Создать директорию `src/qanorm/db/`.
-45. Создать файл `src/qanorm/db/__init__.py`.
-46. Создать файл `src/qanorm/db/base.py`.
-47. Создать файл `src/qanorm/db/session.py`.
-48. Создать файл `src/qanorm/db/types.py`.
-49. Создать директорию `src/qanorm/models/`.
-50. Создать файл `src/qanorm/models/__init__.py`.
-51. Создать директорию `src/qanorm/repositories/`.
-52. Создать файл `src/qanorm/repositories/__init__.py`.
-53. Создать директорию `src/qanorm/jobs/`.
-54. Создать файл `src/qanorm/jobs/__init__.py`.
-55. Создать файл `src/qanorm/jobs/types.py`.
-56. Создать файл `src/qanorm/jobs/scheduler.py`.
-57. Создать файл `src/qanorm/jobs/worker.py`.
-58. Создать директорию `src/qanorm/crawler/`.
-59. Создать файл `src/qanorm/crawler/__init__.py`.
-60. Создать файл `src/qanorm/crawler/seeds.py`.
-61. Создать файл `src/qanorm/crawler/list_pages.py`.
-62. Создать файл `src/qanorm/crawler/discovery.py`.
-63. Создать директорию `src/qanorm/fetchers/`.
-64. Создать файл `src/qanorm/fetchers/__init__.py`.
-65. Создать файл `src/qanorm/fetchers/http.py`.
-66. Создать файл `src/qanorm/fetchers/html.py`.
-67. Создать файл `src/qanorm/fetchers/pdf.py`.
-68. Создать файл `src/qanorm/fetchers/images.py`.
-69. Создать директорию `src/qanorm/parsers/`.
-70. Создать файл `src/qanorm/parsers/__init__.py`.
-71. Создать файл `src/qanorm/parsers/list_parser.py`.
-72. Создать файл `src/qanorm/parsers/card_parser.py`.
-73. Создать файл `src/qanorm/parsers/html_document_parser.py`.
-74. Создать файл `src/qanorm/parsers/pdf_text_parser.py`.
-75. Создать директорию `src/qanorm/ocr/`.
-76. Создать файл `src/qanorm/ocr/__init__.py`.
-77. Создать файл `src/qanorm/ocr/renderer.py`.
-78. Создать файл `src/qanorm/ocr/tesseract.py`.
-79. Создать файл `src/qanorm/ocr/quality.py`.
-80. Создать директорию `src/qanorm/normalizers/`.
-81. Создать файл `src/qanorm/normalizers/__init__.py`.
-82. Создать файл `src/qanorm/normalizers/statuses.py`.
-83. Создать файл `src/qanorm/normalizers/codes.py`.
-84. Создать файл `src/qanorm/normalizers/structure.py`.
-85. Создать файл `src/qanorm/normalizers/locators.py`.
-86. Создать файл `src/qanorm/normalizers/dedup.py`.
-87. Создать директорию `src/qanorm/storage/`.
-88. Создать файл `src/qanorm/storage/__init__.py`.
-89. Создать файл `src/qanorm/storage/paths.py`.
-90. Создать файл `src/qanorm/storage/raw_store.py`.
-91. Создать файл `src/qanorm/storage/checksums.py`.
-92. Создать директорию `src/qanorm/indexing/`.
-93. Создать файл `src/qanorm/indexing/__init__.py`.
-94. Создать файл `src/qanorm/indexing/fts.py`.
-95. Создать файл `src/qanorm/indexing/embeddings.py`.
-96. Создать файл `src/qanorm/indexing/indexer.py`.
-97. Создать директорию `src/qanorm/services/`.
-98. Создать файл `src/qanorm/services/__init__.py`.
-99. Создать файл `src/qanorm/services/ingestion.py`.
-100. Создать файл `src/qanorm/services/document_pipeline.py`.
-101. Создать файл `src/qanorm/services/refresh_service.py`.
-102. Создать файл `src/qanorm/services/health.py`.
-103. Создать директорию `src/qanorm/utils/`.
-104. Создать файл `src/qanorm/utils/__init__.py`.
-105. Создать файл `src/qanorm/utils/text.py`.
-106. Создать файл `src/qanorm/utils/dates.py`.
-107. Создать файл `src/qanorm/utils/retry.py`.
-108. Создать файл `scripts/init_db.py`.
-109. Создать файл `scripts/reindex_all.py`.
-110. Создать файл `scripts/run_worker.py`.
+41. [x] Создать директорию `src/qanorm/cli/`.
+42. [x] Создать файл `src/qanorm/cli/__init__.py`.
+43. [x] Создать файл `src/qanorm/cli/main.py`.
+44. [x] Создать директорию `src/qanorm/db/`.
+45. [x] Создать файл `src/qanorm/db/__init__.py`.
+46. [x] Создать файл `src/qanorm/db/base.py`.
+47. [x] Создать файл `src/qanorm/db/session.py`.
+48. [x] Создать файл `src/qanorm/db/types.py`.
+49. [x] Создать директорию `src/qanorm/models/`.
+50. [x] Создать файл `src/qanorm/models/__init__.py`.
+51. [x] Создать директорию `src/qanorm/repositories/`.
+52. [x] Создать файл `src/qanorm/repositories/__init__.py`.
+53. [x] Создать директорию `src/qanorm/jobs/`.
+54. [x] Создать файл `src/qanorm/jobs/__init__.py`.
+55. [x] Создать файл `src/qanorm/jobs/types.py`.
+56. [x] Создать файл `src/qanorm/jobs/scheduler.py`.
+57. [x] Создать файл `src/qanorm/jobs/worker.py`.
+58. [x] Создать директорию `src/qanorm/crawler/`.
+59. [x] Создать файл `src/qanorm/crawler/__init__.py`.
+60. [x] Создать файл `src/qanorm/crawler/seeds.py`.
+61. [x] Создать файл `src/qanorm/crawler/list_pages.py`.
+62. [x] Создать файл `src/qanorm/crawler/discovery.py`.
+63. [x] Создать директорию `src/qanorm/fetchers/`.
+64. [x] Создать файл `src/qanorm/fetchers/__init__.py`.
+65. [x] Создать файл `src/qanorm/fetchers/http.py`.
+66. [x] Создать файл `src/qanorm/fetchers/html.py`.
+67. [x] Создать файл `src/qanorm/fetchers/pdf.py`.
+68. [x] Создать файл `src/qanorm/fetchers/images.py`.
+69. [x] Создать директорию `src/qanorm/parsers/`.
+70. [x] Создать файл `src/qanorm/parsers/__init__.py`.
+71. [x] Создать файл `src/qanorm/parsers/list_parser.py`.
+72. [x] Создать файл `src/qanorm/parsers/card_parser.py`.
+73. [x] Создать файл `src/qanorm/parsers/html_document_parser.py`.
+74. [x] Создать файл `src/qanorm/parsers/pdf_text_parser.py`.
+75. [x] Создать директорию `src/qanorm/ocr/`.
+76. [x] Создать файл `src/qanorm/ocr/__init__.py`.
+77. [x] Создать файл `src/qanorm/ocr/renderer.py`.
+78. [x] Создать файл `src/qanorm/ocr/tesseract.py`.
+79. [x] Создать файл `src/qanorm/ocr/quality.py`.
+80. [x] Создать директорию `src/qanorm/normalizers/`.
+81. [x] Создать файл `src/qanorm/normalizers/__init__.py`.
+82. [x] Создать файл `src/qanorm/normalizers/statuses.py`.
+83. [x] Создать файл `src/qanorm/normalizers/codes.py`.
+84. [x] Создать файл `src/qanorm/normalizers/structure.py`.
+85. [x] Создать файл `src/qanorm/normalizers/locators.py`.
+86. [x] Создать файл `src/qanorm/normalizers/dedup.py`.
+87. [x] Создать директорию `src/qanorm/storage/`.
+88. [x] Создать файл `src/qanorm/storage/__init__.py`.
+89. [x] Создать файл `src/qanorm/storage/paths.py`.
+90. [x] Создать файл `src/qanorm/storage/raw_store.py`.
+91. [x] Создать файл `src/qanorm/storage/checksums.py`.
+92. [x] Создать директорию `src/qanorm/indexing/`.
+93. [x] Создать файл `src/qanorm/indexing/__init__.py`.
+94. [x] Создать файл `src/qanorm/indexing/fts.py`.
+95. [x] Создать файл `src/qanorm/indexing/embeddings.py`.
+96. [x] Создать файл `src/qanorm/indexing/indexer.py`.
+97. [x] Создать директорию `src/qanorm/services/`.
+98. [x] Создать файл `src/qanorm/services/__init__.py`.
+99. [x] Создать файл `src/qanorm/services/ingestion.py`.
+100. [x] Создать файл `src/qanorm/services/document_pipeline.py`.
+101. [x] Создать файл `src/qanorm/services/refresh_service.py`.
+102. [x] Создать файл `src/qanorm/services/health.py`.
+103. [x] Создать директорию `src/qanorm/utils/`.
+104. [x] Создать файл `src/qanorm/utils/__init__.py`.
+105. [x] Создать файл `src/qanorm/utils/text.py`.
+106. [x] Создать файл `src/qanorm/utils/dates.py`.
+107. [x] Создать файл `src/qanorm/utils/retry.py`.
+108. [x] Создать файл `scripts/init_db.py`.
+109. [x] Создать файл `scripts/reindex_all.py`.
+110. [x] Создать файл `scripts/run_worker.py`.
 
 ### Блок D. База данных и миграции
 

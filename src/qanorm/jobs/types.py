@@ -1,0 +1,1 @@
+"""Job type declarations."""
