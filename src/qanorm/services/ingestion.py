@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from qanorm.crawler.discovery import discover_all_seeds
 from qanorm.settings import get_settings
 
 
@@ -21,12 +22,26 @@ def check_configuration() -> dict[str, Any]:
 
 
 def run_seed_crawl() -> dict[str, Any]:
-    """Return a dry-run summary for the seed crawl command."""
+    """Run first-page discovery across all configured seeds."""
 
-    settings = get_settings()
+    discovered = discover_all_seeds()
+    total_list_pages = sum(len(item.page_urls) for item in discovered)
+    total_document_cards = sum(len(item.entries) for item in discovered)
+    total_jobs = sum(len(item.queued_jobs) for item in discovered)
+
     return {
-        "status": "queued",
-        "message": "Seed crawl entrypoint is ready. Crawl implementation will be added in later blocks.",
-        "seed_count": len(settings.sources.seed_urls),
-        "seed_urls": settings.sources.seed_urls,
+        "status": "ok",
+        "seed_count": len(discovered),
+        "total_list_pages_discovered": total_list_pages,
+        "total_document_cards_discovered_on_first_pages": total_document_cards,
+        "queued_process_document_card_jobs": total_jobs,
+        "seeds": [
+            {
+                "seed_url": item.seed_url,
+                "first_page_document_count": len(item.entries),
+                "total_section_pages_discovered": len(item.page_urls),
+                "queued_jobs": len(item.queued_jobs),
+            }
+            for item in discovered
+        ],
     }
