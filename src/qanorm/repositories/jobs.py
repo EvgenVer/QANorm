@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from qanorm.db.types import JobStatus
+from qanorm.db.types import JobStatus, JobType
 from qanorm.models import IngestionJob, UpdateEvent
 
 
@@ -30,6 +30,49 @@ class IngestionJobRepository:
 
         return self.session.get(IngestionJob, job_id)
 
+    def get_duplicate_pending_or_running(
+        self,
+        job_type: JobType,
+        dedup_key: str,
+    ) -> IngestionJob | None:
+        """Find an existing pending/running job with the same dedup key."""
+
+        stmt = (
+            select(IngestionJob)
+            .where(
+                IngestionJob.job_type == job_type,
+                IngestionJob.status.in_((JobStatus.PENDING, JobStatus.RUNNING)),
+                IngestionJob.payload["dedup_key"].astext == dedup_key,
+            )
+            .order_by(IngestionJob.created_at.asc())
+            .limit(1)
+        )
+        return self.session.execute(stmt).scalar_one_or_none()
+
+    def get_next_ready_job(self, now: datetime | None = None) -> IngestionJob | None:
+        """Load the next ready job without changing its status."""
+
+        claimed_at = now or datetime.now(timezone.utc)
+        stmt = (
+            select(IngestionJob)
+            .where(
+                IngestionJob.status == JobStatus.PENDING,
+                IngestionJob.scheduled_at <= claimed_at,
+            )
+            .order_by(IngestionJob.scheduled_at.asc(), IngestionJob.created_at.asc())
+            .limit(1)
+        )
+        return self.session.execute(stmt).scalar_one_or_none()
+
+    def mark_running(self, job: IngestionJob, started_at: datetime | None = None) -> IngestionJob:
+        """Mark a job as running."""
+
+        job.status = JobStatus.RUNNING
+        job.started_at = started_at or datetime.now(timezone.utc)
+        job.finished_at = None
+        self.session.flush()
+        return job
+
     def claim_next_ready_job(self, now: datetime | None = None) -> IngestionJob | None:
         """Atomically claim the next pending scheduled job."""
 
@@ -48,15 +91,13 @@ class IngestionJobRepository:
         if job is None:
             return None
 
-        job.status = JobStatus.RUNNING
-        job.started_at = claimed_at
-        self.session.flush()
-        return job
+        return self.mark_running(job, started_at=claimed_at)
 
     def mark_completed(self, job: IngestionJob, finished_at: datetime | None = None) -> IngestionJob:
         """Mark a job as completed."""
 
         job.status = JobStatus.COMPLETED
+        job.last_error = None
         job.finished_at = finished_at or datetime.now(timezone.utc)
         self.session.flush()
         return job
@@ -73,6 +114,31 @@ class IngestionJobRepository:
         job.last_error = error_message
         job.attempt_count += 1
         job.finished_at = finished_at or datetime.now(timezone.utc)
+        self.session.flush()
+        return job
+
+    def retry_after_temporary_error(
+        self,
+        job: IngestionJob,
+        error_message: str,
+        *,
+        retry_delay_seconds: int = 60,
+        now: datetime | None = None,
+    ) -> IngestionJob:
+        """Requeue a job after a temporary failure when attempts remain."""
+
+        retried_at = now or datetime.now(timezone.utc)
+        job.attempt_count += 1
+        job.last_error = error_message
+        if job.attempt_count >= job.max_attempts:
+            job.status = JobStatus.FAILED
+            job.finished_at = retried_at
+        else:
+            job.status = JobStatus.PENDING
+            job.scheduled_at = retried_at.replace(microsecond=0)
+            job.scheduled_at = job.scheduled_at + timedelta(seconds=retry_delay_seconds)
+            job.started_at = None
+            job.finished_at = None
         self.session.flush()
         return job
 
