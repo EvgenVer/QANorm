@@ -49,6 +49,19 @@ def fetch_document_card(card_url: str) -> str:
     return fetch_html_document(card_url)
 
 
+def extract_card_page_image_urls(card_url: str, page_html: str) -> list[str]:
+    """Extract absolute page image URLs from a card page."""
+
+    parser = html.HTMLParser(encoding="utf-8")
+    tree = html.fromstring(page_html.encode("utf-8"), parser=parser)
+    image_urls: list[str] = []
+    for raw_src in tree.xpath("//img[contains(@class, 'img2')]/@src"):
+        absolute_url = urljoin(card_url, raw_src)
+        if absolute_url not in image_urls:
+            image_urls.append(absolute_url)
+    return image_urls
+
+
 def parse_document_card(
     card_url: str,
     page_html: str,

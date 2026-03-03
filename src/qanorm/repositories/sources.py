@@ -64,6 +64,23 @@ class RawArtifactRepository:
         self.session.flush()
         return items
 
+    def get_by_version_and_relative_path(
+        self,
+        document_version_id: UUID,
+        relative_path: str,
+    ) -> RawArtifact | None:
+        """Load a raw artifact by version and relative path."""
+
+        stmt = (
+            select(RawArtifact)
+            .where(
+                RawArtifact.document_version_id == document_version_id,
+                RawArtifact.relative_path == relative_path,
+            )
+            .limit(1)
+        )
+        return self.session.execute(stmt).scalar_one_or_none()
+
     def list_for_document_version(self, document_version_id: UUID) -> list[RawArtifact]:
         """List raw artifacts linked to a document version."""
 
