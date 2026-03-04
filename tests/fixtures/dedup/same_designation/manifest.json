@@ -1,0 +1,8 @@
+{
+  "document_code": "СП 20.13330.2016",
+  "equivalent_versions": [
+    "version_a.txt",
+    "version_b_equivalent.txt"
+  ],
+  "purpose": "deduplication_same_designation"
+}

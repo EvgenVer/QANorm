@@ -6,72 +6,11 @@ from qanorm.parsers.list_parser import (
     parse_list2_list_page,
     parse_mega_doc_list_page,
 )
+from tests.unit.fixture_loader import read_fixture_text
 
 
-MEGA_DOC_HTML = """
-<div class="div_linc_top">
-  <div class="div_linc_top_in_activ">[1]</div>
-  <div class="div_linc_top_in"><a href="./sp_svod-pravil_1.html">2</a></div>
-  <div class="div_linc_top_in"><a href="./sp_svod-pravil_2.html">3</a></div>
-</div>
-<div class="table_doc">
-  <div class="row header">
-    <div class="cell header-cell">№</div>
-    <div class="cell header-cell">Наименование</div>
-    <div class="cell header-cell">Статус</div>
-  </div>
-  <div class="row">
-    <div class="cell">1</div>
-    <div class="cell">
-      <a href="../../../mega_doc/norm/pravila/0/doc_1.html">
-        "СП 20.13330.2016. Нагрузки и воздействия"
-        (ред. от 01.01.2024)
-      </a>
-    </div>
-    <div class="cell">действует</div>
-  </div>
-  <div class="row">
-    <div class="cell">2</div>
-    <div class="cell">
-      <a href="../../../mega_doc/norm/pravila/0/doc_2.html">
-        "СП 30.13330.2020. Внутренний водопровод и канализация"
-      </a>
-    </div>
-    <div class="cell">взамен</div>
-  </div>
-</div>
-"""
-
-
-LIST2_HTML = """
-<span class="pagebox">
-  <a href="../list2/64522-0.htm"><b>[1]</b></a>
-  <a href="../list2/64522-1.htm">2</a>
-  <a href="../list2/64522-2.htm">3</a>
-</span>
-<table class="doctab1">
-  <tr class="m1">
-    <td>Номер</td><td>Название</td><td>Дата введения</td><td>Статус</td>
-  </tr>
-  <tr class="m3">
-    <td align="left">
-      <a class="a2" href="../Data2/1/4294845/4294845305.pdf" target="_blank">pdf</a>
-      <a href="../Index2/1/4294845/4294845305.htm" target="_blank">Федеральный закон 3-ФЗ</a>
-    </td>
-    <td align="left">О радиационной безопасности населения</td>
-    <td align="center">15.01.1996</td>
-    <td align="center"><font color="#0000FF"><b>действует</b></font></td>
-  </tr>
-  <tr class="m3">
-    <td align="left">
-      <a href="../Index2/1/4293750/4293750616.htm" target="_blank">Федеральный закон 7-ФЗ</a>
-    </td>
-    <td align="left">Об охране окружающей среды</td>
-    <td align="center">10.01.2002</td>
-    <td align="center"><font color="#0000FF"><b>действует</b></font></td>
-  </tr>
-</table>
-"""
+MEGA_DOC_HTML = read_fixture_text("list_pages", "mega_doc_page.html")
+LIST2_HTML = read_fixture_text("list_pages", "list2_page.html")
 
 
 def test_detect_list_page_kind_distinguishes_sources() -> None:

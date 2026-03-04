@@ -7,34 +7,12 @@ from qanorm.db.types import JobType, StatusNormalized
 from qanorm.models import Document, IngestionJob
 from qanorm.parsers.card_parser import parse_document_card
 from qanorm.services.document_pipeline import persist_document_card
+from tests.unit.fixture_loader import read_fixture_text
 
 
-INDEX_CARD_HTML = """
-<!DOCTYPE html>
-<html>
-  <body>
-    <h2>Скачать Федеральный закон 3-ФЗ О радиационной безопасности населения</h2>
-    <h3>Дата актуализации: 01.01.2021</h3>
-    <h2><img title="Версия для печати"/> <a href="../../../Data2/1/doc.pdf" title="PDF">pdf</a> <a href="../../../Data2/1/doc.htm" title="HTML">html</a> Федеральный закон 3-ФЗ</h2>
-    <h3>О радиационной безопасности населения</h3>
-    <table class="doctab2">
-      <tr><td align="right"><b>Обозначение:</b></td><td align="left"><a class="a1" href="../../../Data2/1/doc.htm">Федеральный закон 3-ФЗ</a></td></tr>
-      <tr><td align="right"><b>Статус:</b></td><td align="left"><b>действует</b></td></tr>
-      <tr><td align="right"><b>Название рус.:</b></td><td align="left">О радиационной безопасности населения</td></tr>
-      <tr><td align="right"><b>Дата актуализации:</b></td><td align="left">01.01.2021</td></tr>
-      <tr><td align="right"><b>Дата введения:</b></td><td align="left">15.01.1996</td></tr>
-      <tr><td align="right"><b>Область применения:</b></td><td align="left">Правовые основы обеспечения радиационной безопасности населения</td></tr>
-      <tr><td align="right"><b>Издан:</b></td><td align="left">Российская газета (№ 9 от 17.01.1996 г.)</td></tr>
-      <tr><td align="right"><b>Нормативные ссылки:</b></td><td align="left"><ul><li><a href="../../../Index2/1/1.htm">Федеральный закон 294-ФЗ</a></li></ul></td></tr>
-    </table>
-    <img class="img2" src="../../../Data2/1/doc.files/0.gif"/>
-  </body>
-</html>
-"""
-
-
-MEGA_DOC_CARD_HTML = """
-<?xml version="1.0" encoding="utf-8" ?>
+INDEX_CARD_HTML = read_fixture_text("cards", "index_card_full_html.html")
+INDEX_CARD_PDF_ONLY_HTML = read_fixture_text("cards", "index_card_pdf_only.html")
+MEGA_DOC_CARD_HTML = """<?xml version="1.0" encoding="utf-8" ?>
 <html>
   <head>
     <title>"СП 128.13330.2016. Свод правил. Алюминиевые конструкции" (ред. от 29.07.2024)</title>
@@ -74,6 +52,22 @@ def test_parse_index_card_extracts_metadata_and_source_links() -> None:
     assert card.pdf_url == "https://meganorm.ru/Data2/1/doc.pdf"
     assert card.html_url == "https://meganorm.ru/Data2/1/doc.htm"
     assert card.has_page_images is True
+
+
+def test_parse_index_card_pdf_only_fixture_extracts_pdf_without_html_link() -> None:
+    card = parse_document_card(
+        "https://meganorm.ru/Index2/77/1000001.htm",
+        INDEX_CARD_PDF_ONLY_HTML,
+        source_list_status_raw="действует",
+    )
+
+    assert card.document_code == "ГОСТ Р 1.0-2020"
+    assert card.card_status_raw == "действует"
+    assert card.text_actualized_at == date(2022, 2, 5)
+    assert card.pdf_url == "https://meganorm.ru/Data2/77/gost_r_1_0_2020.pdf"
+    assert card.html_url is None
+    assert card.has_full_html is False
+    assert card.has_page_images is False
 
 
 def test_parse_mega_doc_card_extracts_basic_metadata() -> None:

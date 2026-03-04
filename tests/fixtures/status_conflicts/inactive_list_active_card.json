@@ -1,0 +1,6 @@
+{
+  "source_list_status_raw": "утратил силу",
+  "card_status_raw": "действует",
+  "expected_status_normalized": "active",
+  "case": "list_inactive_card_active"
+}
