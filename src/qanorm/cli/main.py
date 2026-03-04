@@ -13,6 +13,7 @@ from qanorm.indexing.indexer import reindex
 from qanorm.jobs.worker import run_worker_loop
 from qanorm.services.health import get_health_report
 from qanorm.services.ingestion import check_configuration, run_seed_crawl
+from qanorm.services.metrics import get_ingestion_metrics, get_ingestion_test_run_report
 from qanorm.services.refresh_service import request_document_refresh, run_document_refresh
 
 
@@ -37,6 +38,8 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("init-db", help="Apply all database migrations.")
     subparsers.add_parser("crawl-seeds", help="Run the seed crawl entrypoint.")
     subparsers.add_parser("run-worker", help="Run the background worker entrypoint.")
+    subparsers.add_parser("ingestion-metrics", help="Show aggregated ingestion quality metrics.")
+    subparsers.add_parser("ingestion-report", help="Show the Stage 1 ingestion test run report.")
 
     reindex_parser = subparsers.add_parser("reindex", help="Run reindex entrypoint.")
     reindex_parser.add_argument("--document-code", help="Optional canonical document code.", default=None)
@@ -74,6 +77,14 @@ def main() -> None:
 
     if args.command == "run-worker":
         print(json.dumps(run_worker_loop(), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "ingestion-metrics":
+        print(json.dumps(get_ingestion_metrics(), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "ingestion-report":
+        print(json.dumps(get_ingestion_test_run_report(), ensure_ascii=False, indent=2))
         return
 
     if args.command == "reindex":

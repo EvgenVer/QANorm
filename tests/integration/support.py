@@ -199,6 +199,9 @@ class FakeIngestionJobRepository:
     def get(self, job_id: UUID) -> IngestionJob | None:
         return next((item for item in self.session.store.jobs if item.id == job_id), None)
 
+    def list_all(self) -> list[IngestionJob]:
+        return list(self.session.store.jobs)
+
     def get_duplicate_pending_or_running(self, job_type, dedup_key: str) -> IngestionJob | None:
         for item in self.session.store.jobs:
             if item.job_type != job_type:
@@ -279,6 +282,9 @@ class FakeUpdateEventRepository:
     def list_for_document(self, document_id: UUID) -> list[UpdateEvent]:
         return [item for item in self.session.store.events if item.document_id == document_id]
 
+    def list_all(self) -> list[UpdateEvent]:
+        return list(self.session.store.events)
+
 
 @contextmanager
 def patched_in_memory_repositories(session: FakeSession) -> Iterator[FakeSession]:
@@ -298,6 +304,12 @@ def patched_in_memory_repositories(session: FakeSession) -> Iterator[FakeSession
         "qanorm.services.refresh_service.DocumentSourceRepository": FakeDocumentSourceRepository,
         "qanorm.services.refresh_service.IngestionJobRepository": FakeIngestionJobRepository,
         "qanorm.services.refresh_service.UpdateEventRepository": FakeUpdateEventRepository,
+        "qanorm.services.metrics.DocumentRepository": FakeDocumentRepository,
+        "qanorm.services.metrics.DocumentVersionRepository": FakeDocumentVersionRepository,
+        "qanorm.services.metrics.DocumentSourceRepository": FakeDocumentSourceRepository,
+        "qanorm.services.metrics.RawArtifactRepository": FakeRawArtifactRepository,
+        "qanorm.services.metrics.IngestionJobRepository": FakeIngestionJobRepository,
+        "qanorm.services.metrics.UpdateEventRepository": FakeUpdateEventRepository,
         "qanorm.services.versioning.DocumentRepository": FakeDocumentRepository,
         "qanorm.services.versioning.DocumentVersionRepository": FakeDocumentVersionRepository,
         "qanorm.services.versioning.UpdateEventRepository": FakeUpdateEventRepository,

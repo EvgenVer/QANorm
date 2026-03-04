@@ -30,6 +30,12 @@ class IngestionJobRepository:
 
         return self.session.get(IngestionJob, job_id)
 
+    def list_all(self) -> list[IngestionJob]:
+        """List all jobs in creation order."""
+
+        stmt = select(IngestionJob).order_by(IngestionJob.created_at.asc())
+        return list(self.session.execute(stmt).scalars().all())
+
     def get_duplicate_pending_or_running(
         self,
         job_type: JobType,
@@ -164,4 +170,10 @@ class UpdateEventRepository:
             .where(UpdateEvent.document_id == document_id)
             .order_by(UpdateEvent.created_at.asc())
         )
+        return list(self.session.execute(stmt).scalars().all())
+
+    def list_all(self) -> list[UpdateEvent]:
+        """List all update events."""
+
+        stmt = select(UpdateEvent).order_by(UpdateEvent.created_at.asc())
         return list(self.session.execute(stmt).scalars().all())
