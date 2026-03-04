@@ -132,7 +132,7 @@ def handle_index_document_job(session: Any, payload: dict[str, Any]) -> dict[str
 def handle_refresh_document_job(session: Any, payload: dict[str, Any]) -> dict[str, Any]:
     """Handle a ``refresh_document`` job."""
 
-    return _to_dict(process_refresh_document_job(payload["document_code"]))
+    return _to_dict(process_refresh_document_job(payload["document_code"], session=session))
 
 
 def process_claimed_job(session: Any, job: IngestionJob) -> ProcessedJobResult:

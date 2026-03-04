@@ -13,7 +13,7 @@ from qanorm.indexing.indexer import reindex
 from qanorm.jobs.worker import run_worker_loop
 from qanorm.services.health import get_health_report
 from qanorm.services.ingestion import check_configuration, run_seed_crawl
-from qanorm.services.refresh_service import request_document_refresh
+from qanorm.services.refresh_service import request_document_refresh, run_document_refresh
 
 
 def _build_alembic_config() -> Config:
@@ -43,6 +43,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     refresh_parser = subparsers.add_parser("refresh-document", help="Queue a document refresh request.")
     refresh_parser.add_argument("document_code", help="Canonical or display document code.")
+
+    update_parser = subparsers.add_parser("update-document", help="Refresh one document immediately.")
+    update_parser.add_argument("document_code", help="Canonical or display document code.")
 
     return parser
 
@@ -79,6 +82,10 @@ def main() -> None:
 
     if args.command == "refresh-document":
         print(json.dumps(request_document_refresh(args.document_code), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "update-document":
+        print(json.dumps(run_document_refresh(args.document_code), ensure_ascii=False, indent=2))
         return
 
     parser.print_help()

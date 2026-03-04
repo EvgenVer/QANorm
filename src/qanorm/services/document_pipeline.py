@@ -223,6 +223,7 @@ def persist_document_card(
     card_data: DocumentCardData,
     list_page_url: str | None = None,
     seed_url: str | None = None,
+    queue_download_job: bool = True,
 ) -> DocumentCardProcessResult:
     """Persist parsed card metadata and queue artifact downloads for active documents."""
 
@@ -290,32 +291,34 @@ def persist_document_card(
     )
     source_repository.add(source)
 
-    download_job = create_job(
-        job_repository,
-        job_type=JobType.DOWNLOAD_ARTIFACTS,
-        payload={
-            "document_version_id": str(version.id),
-            "document_code": card_data.document_code,
-            "card_url": card_data.card_url,
-            "html_url": card_data.html_url,
-            "pdf_url": card_data.pdf_url,
-            "print_url": card_data.print_url,
-            "has_full_html": card_data.has_full_html,
-            "has_page_images": card_data.has_page_images,
-        },
-    )
-    logger.info(
-        "Queued pipeline transition '%s' -> '%s' for document_version_id=%s",
-        JobType.PROCESS_DOCUMENT_CARD.value,
-        JobType.DOWNLOAD_ARTIFACTS.value,
-        version.id,
-    )
+    download_job = None
+    if queue_download_job:
+        download_job = create_job(
+            job_repository,
+            job_type=JobType.DOWNLOAD_ARTIFACTS,
+            payload={
+                "document_version_id": str(version.id),
+                "document_code": card_data.document_code,
+                "card_url": card_data.card_url,
+                "html_url": card_data.html_url,
+                "pdf_url": card_data.pdf_url,
+                "print_url": card_data.print_url,
+                "has_full_html": card_data.has_full_html,
+                "has_page_images": card_data.has_page_images,
+            },
+        )
+        logger.info(
+            "Queued pipeline transition '%s' -> '%s' for document_version_id=%s",
+            JobType.PROCESS_DOCUMENT_CARD.value,
+            JobType.DOWNLOAD_ARTIFACTS.value,
+            version.id,
+        )
 
     return DocumentCardProcessResult(
-        status="queued",
+        status="queued" if queue_download_job else "persisted",
         document_id=str(document.id),
         document_version_id=str(version.id),
-        queued_job_id=str(download_job.id),
+        queued_job_id=str(download_job.id) if download_job is not None else None,
     )
 
 
@@ -331,6 +334,7 @@ def download_document_artifacts(
     has_full_html: bool,
     has_page_images: bool,
     raw_store: RawFileStore | None = None,
+    queue_next_job: bool = True,
 ) -> DownloadArtifactsResult:
     """Download and persist raw artifacts for a document version."""
 
@@ -393,17 +397,19 @@ def download_document_artifacts(
         version.processing_status = ProcessingStatus.DOWNLOADED
         session.flush()
 
-    extract_job = create_job(
-        job_repository,
-        job_type=JobType.EXTRACT_TEXT,
-        payload={"document_version_id": str(version_uuid)},
-    )
-    logger.info(
-        "Queued pipeline transition '%s' -> '%s' for document_version_id=%s",
-        JobType.DOWNLOAD_ARTIFACTS.value,
-        JobType.EXTRACT_TEXT.value,
-        version_uuid,
-    )
+    extract_job = None
+    if queue_next_job:
+        extract_job = create_job(
+            job_repository,
+            job_type=JobType.EXTRACT_TEXT,
+            payload={"document_version_id": str(version_uuid)},
+        )
+        logger.info(
+            "Queued pipeline transition '%s' -> '%s' for document_version_id=%s",
+            JobType.DOWNLOAD_ARTIFACTS.value,
+            JobType.EXTRACT_TEXT.value,
+            version_uuid,
+        )
 
     return DownloadArtifactsResult(
         status="ok",
@@ -411,7 +417,7 @@ def download_document_artifacts(
         saved_artifact_count=len(saved_artifacts),
         html_missing=html_missing,
         pdf_missing=pdf_missing,
-        queued_extract_text_job_id=str(extract_job.id),
+        queued_extract_text_job_id=str(extract_job.id) if extract_job is not None else None,
     )
 
 
@@ -420,6 +426,7 @@ def extract_document_text(
     *,
     document_version_id: UUID | str,
     raw_store: RawFileStore | None = None,
+    queue_next_job: bool = True,
 ) -> ExtractedTextResult:
     """Extract intermediate text from stored HTML and/or PDF raw artifacts."""
 
@@ -477,18 +484,20 @@ def extract_document_text(
     version.parse_confidence = confidence
     session.flush()
 
-    next_job = create_job(
-        job_repository,
-        job_type=JobType.RUN_OCR if needs_ocr else JobType.NORMALIZE_DOCUMENT,
-        payload={"document_version_id": str(version_uuid)},
-    )
-    next_job_type = JobType.RUN_OCR if needs_ocr else JobType.NORMALIZE_DOCUMENT
-    logger.info(
-        "Queued pipeline transition '%s' -> '%s' for document_version_id=%s",
-        JobType.EXTRACT_TEXT.value,
-        next_job_type.value,
-        version_uuid,
-    )
+    next_job = None
+    if queue_next_job:
+        next_job = create_job(
+            job_repository,
+            job_type=JobType.RUN_OCR if needs_ocr else JobType.NORMALIZE_DOCUMENT,
+            payload={"document_version_id": str(version_uuid)},
+        )
+        next_job_type = JobType.RUN_OCR if needs_ocr else JobType.NORMALIZE_DOCUMENT
+        logger.info(
+            "Queued pipeline transition '%s' -> '%s' for document_version_id=%s",
+            JobType.EXTRACT_TEXT.value,
+            next_job_type.value,
+            version_uuid,
+        )
 
     return ExtractedTextResult(
         status="ok",
@@ -496,7 +505,7 @@ def extract_document_text(
         text_length=len(chosen_text),
         needs_ocr=needs_ocr,
         saved_snapshot_count=len(saved_snapshots),
-        queued_job_id=str(next_job.id),
+        queued_job_id=str(next_job.id) if next_job is not None else None,
     )
 
 
@@ -507,6 +516,7 @@ def run_document_ocr(
     raw_store: RawFileStore | None = None,
     render_dpi: int | None = None,
     languages: str | tuple[str, ...] | None = None,
+    queue_next_job: bool = True,
 ) -> OCRProcessingResult:
     """Run OCR fallback for a stored document version and queue normalization."""
 
@@ -567,17 +577,19 @@ def run_document_ocr(
     version.processing_status = ProcessingStatus.EXTRACTED
     session.flush()
 
-    next_job = create_job(
-        job_repository,
-        job_type=JobType.NORMALIZE_DOCUMENT,
-        payload={"document_version_id": str(version_uuid)},
-    )
-    logger.info(
-        "Queued pipeline transition '%s' -> '%s' for document_version_id=%s",
-        JobType.RUN_OCR.value,
-        JobType.NORMALIZE_DOCUMENT.value,
-        version_uuid,
-    )
+    next_job = None
+    if queue_next_job:
+        next_job = create_job(
+            job_repository,
+            job_type=JobType.NORMALIZE_DOCUMENT,
+            payload={"document_version_id": str(version_uuid)},
+        )
+        logger.info(
+            "Queued pipeline transition '%s' -> '%s' for document_version_id=%s",
+            JobType.RUN_OCR.value,
+            JobType.NORMALIZE_DOCUMENT.value,
+            version_uuid,
+        )
 
     return OCRProcessingResult(
         status="ok",
@@ -586,7 +598,7 @@ def run_document_ocr(
         parse_confidence=confidence,
         low_confidence_parse=low_confidence_parse,
         saved_artifact_count=len(saved_artifacts),
-        queued_job_id=str(next_job.id),
+        queued_job_id=str(next_job.id) if next_job is not None else None,
     )
 
 
@@ -594,6 +606,7 @@ def normalize_document_structure(
     session: Session,
     *,
     document_version_id: UUID | str,
+    queue_next_job: bool = True,
 ) -> StructureNormalizationPipelineResult:
     """Normalize extracted document text into structural nodes and references."""
 
@@ -701,17 +714,19 @@ def normalize_document_structure(
     )
     session.flush()
 
-    next_job = create_job(
-        job_repository,
-        job_type=JobType.INDEX_DOCUMENT,
-        payload={"document_version_id": str(version_uuid)},
-    )
-    logger.info(
-        "Queued pipeline transition '%s' -> '%s' for document_version_id=%s",
-        JobType.NORMALIZE_DOCUMENT.value,
-        JobType.INDEX_DOCUMENT.value,
-        version_uuid,
-    )
+    next_job = None
+    if queue_next_job:
+        next_job = create_job(
+            job_repository,
+            job_type=JobType.INDEX_DOCUMENT,
+            payload={"document_version_id": str(version_uuid)},
+        )
+        logger.info(
+            "Queued pipeline transition '%s' -> '%s' for document_version_id=%s",
+            JobType.NORMALIZE_DOCUMENT.value,
+            JobType.INDEX_DOCUMENT.value,
+            version_uuid,
+        )
 
     return StructureNormalizationPipelineResult(
         status="ok",
@@ -720,7 +735,7 @@ def normalize_document_structure(
         reference_count=len(reference_models),
         content_hash=comparison.content_hash,
         deduplicated=False,
-        queued_job_id=str(next_job.id),
+        queued_job_id=str(next_job.id) if next_job is not None else None,
     )
 
 
