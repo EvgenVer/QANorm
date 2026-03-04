@@ -23,7 +23,11 @@ class DocumentVersion(Base):
     edition_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source_status_raw: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status_normalized: Mapped[StatusNormalized] = mapped_column(
-        Enum(StatusNormalized, name="status_normalized_enum"),
+        Enum(
+            StatusNormalized,
+            name="status_normalized_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
         nullable=False,
         default=StatusNormalized.UNKNOWN,
     )
@@ -37,7 +41,11 @@ class DocumentVersion(Base):
     parse_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     has_ocr: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     processing_status: Mapped[ProcessingStatus] = mapped_column(
-        Enum(ProcessingStatus, name="processing_status_enum"),
+        Enum(
+            ProcessingStatus,
+            name="processing_status_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
         nullable=False,
         default=ProcessingStatus.PENDING,
         server_default=ProcessingStatus.PENDING.value,

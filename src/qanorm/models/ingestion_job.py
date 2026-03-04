@@ -20,10 +20,21 @@ class IngestionJob(Base):
     __tablename__ = "ingestion_jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    job_type: Mapped[JobType] = mapped_column(Enum(JobType, name="job_type_enum"), nullable=False)
+    job_type: Mapped[JobType] = mapped_column(
+        Enum(
+            JobType,
+            name="job_type_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        nullable=False,
+    )
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     status: Mapped[JobStatus] = mapped_column(
-        Enum(JobStatus, name="job_status_enum"),
+        Enum(
+            JobStatus,
+            name="job_status_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
         nullable=False,
         default=JobStatus.PENDING,
         server_default=JobStatus.PENDING.value,

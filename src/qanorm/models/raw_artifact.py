@@ -20,7 +20,14 @@ class RawArtifact(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     document_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("document_versions.id", ondelete="CASCADE"), nullable=False)
-    artifact_type: Mapped[ArtifactType] = mapped_column(Enum(ArtifactType, name="artifact_type_enum"), nullable=False)
+    artifact_type: Mapped[ArtifactType] = mapped_column(
+        Enum(
+            ArtifactType,
+            name="artifact_type_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        nullable=False,
+    )
     storage_path: Mapped[str] = mapped_column(Text, nullable=False)
     relative_path: Mapped[str] = mapped_column(Text, nullable=False)
     mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)

@@ -24,7 +24,11 @@ class Document(Base):
     document_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
     status_normalized: Mapped[StatusNormalized] = mapped_column(
-        Enum(StatusNormalized, name="status_normalized_enum"),
+        Enum(
+            StatusNormalized,
+            name="status_normalized_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
         nullable=False,
         default=StatusNormalized.UNKNOWN,
     )

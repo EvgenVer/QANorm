@@ -28,10 +28,27 @@ branch_labels = None
 depends_on = None
 
 
-status_normalized_enum = sa.Enum("active", "inactive", "unknown", name="status_normalized_enum")
-processing_status_enum = sa.Enum("pending", "downloaded", "extracted", "normalized", "indexed", "failed", name="processing_status_enum")
-artifact_type_enum = sa.Enum("html_raw", "pdf_raw", "page_image", "ocr_raw", "parsed_text_snapshot", name="artifact_type_enum")
-job_type_enum = sa.Enum(
+status_normalized_enum = postgresql.ENUM("active", "inactive", "unknown", name="status_normalized_enum", create_type=False)
+processing_status_enum = postgresql.ENUM(
+    "pending",
+    "downloaded",
+    "extracted",
+    "normalized",
+    "indexed",
+    "failed",
+    name="processing_status_enum",
+    create_type=False,
+)
+artifact_type_enum = postgresql.ENUM(
+    "html_raw",
+    "pdf_raw",
+    "page_image",
+    "ocr_raw",
+    "parsed_text_snapshot",
+    name="artifact_type_enum",
+    create_type=False,
+)
+job_type_enum = postgresql.ENUM(
     "crawl_seed",
     "parse_list_page",
     "process_document_card",
@@ -42,8 +59,9 @@ job_type_enum = sa.Enum(
     "index_document",
     "refresh_document",
     name="job_type_enum",
+    create_type=False,
 )
-job_status_enum = sa.Enum("pending", "running", "completed", "failed", name="job_status_enum")
+job_status_enum = postgresql.ENUM("pending", "running", "completed", "failed", name="job_status_enum", create_type=False)
 
 
 def upgrade() -> None:
