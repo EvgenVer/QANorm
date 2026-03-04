@@ -42,6 +42,12 @@ from qanorm.repositories import (
     IngestionJobRepository,
     RawArtifactRepository,
 )
+from qanorm.services.versioning import (
+    activate_processed_version,
+    compare_candidate_version_to_active,
+    find_existing_document_by_normalized_code,
+    skip_duplicate_version,
+)
 from qanorm.storage.checksums import sha256_bytes, sha256_file
 from qanorm.storage.paths import build_artifact_relative_path
 from qanorm.storage.raw_store import RawFileStore
@@ -103,6 +109,8 @@ class StructureNormalizationPipelineResult:
     source_artifact_type: str
     node_count: int
     reference_count: int
+    content_hash: str
+    deduplicated: bool
     queued_job_id: str | None = None
 
 
@@ -160,7 +168,10 @@ def persist_document_card(
 
     normalized_code = normalize_document_code(card_data.document_code)
     now = datetime.now(timezone.utc)
-    document = document_repository.get_by_normalized_code(normalized_code)
+    document = find_existing_document_by_normalized_code(
+        session,
+        normalized_code=normalized_code,
+    )
     if document is None:
         document = Document(
             normalized_code=normalized_code,
@@ -513,6 +524,30 @@ def normalize_document_structure(
         source_text,
         parse_confidence=version.parse_confidence,
     )
+    comparison = compare_candidate_version_to_active(
+        session,
+        document_version_id=version_uuid,
+        content_text=normalized.prepared_text.text,
+    )
+
+    if comparison.is_duplicate:
+        skip_duplicate_version(
+            session,
+            document_version_id=version_uuid,
+            content_hash=comparison.content_hash,
+            duplicate_of_version_id=comparison.active_version_id,
+        )
+        version.processing_status = ProcessingStatus.NORMALIZED
+        session.flush()
+        return StructureNormalizationPipelineResult(
+            status="ok",
+            source_artifact_type=source_artifact.artifact_type.value,
+            node_count=0,
+            reference_count=0,
+            content_hash=comparison.content_hash,
+            deduplicated=True,
+            queued_job_id=None,
+        )
 
     node_id_by_order: dict[int, UUID] = {}
     node_models: list[DocumentNode] = []
@@ -556,6 +591,11 @@ def normalize_document_structure(
         reference_repository.add_many(reference_models)
 
     version.processing_status = ProcessingStatus.NORMALIZED
+    activate_processed_version(
+        session,
+        document_version_id=version_uuid,
+        content_hash=comparison.content_hash,
+    )
     session.flush()
 
     next_job = create_job(
@@ -569,6 +609,8 @@ def normalize_document_structure(
         source_artifact_type=source_artifact.artifact_type.value,
         node_count=len(node_models),
         reference_count=len(reference_models),
+        content_hash=comparison.content_hash,
+        deduplicated=False,
         queued_job_id=str(next_job.id),
     )
 

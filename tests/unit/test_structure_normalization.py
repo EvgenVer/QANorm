@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -137,14 +138,31 @@ def test_normalize_document_structure_persists_nodes_references_and_queues_index
         _ScalarOneResult(None),
     ]
 
-    result = normalize_document_structure(session, document_version_id=version_id)
+    with patch(
+        "qanorm.services.document_pipeline.compare_candidate_version_to_active",
+        return_value=SimpleNamespace(
+            content_hash="abc123",
+            is_duplicate=False,
+            active_version_id=None,
+        ),
+    ) as compare_mock:
+        with patch("qanorm.services.document_pipeline.activate_processed_version") as activate_mock:
+            result = normalize_document_structure(session, document_version_id=version_id)
 
     assert result.status == "ok"
     assert result.source_artifact_type == ArtifactType.PARSED_TEXT_SNAPSHOT.value
     assert result.node_count >= 5
     assert result.reference_count == 1
+    assert result.content_hash == "abc123"
+    assert result.deduplicated is False
     assert version.processing_status is ProcessingStatus.NORMALIZED
     assert session.add_all.call_count == 2
+    compare_mock.assert_called_once()
+    activate_mock.assert_called_once_with(
+        session,
+        document_version_id=version_id,
+        content_hash="abc123",
+    )
 
     saved_nodes = session.add_all.call_args_list[0].args[0]
     saved_references = session.add_all.call_args_list[1].args[0]
