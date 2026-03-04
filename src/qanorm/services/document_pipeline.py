@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
@@ -17,8 +18,9 @@ from qanorm.fetchers.html import fetch_html_document
 from qanorm.fetchers.images import fetch_image_bytes
 from qanorm.fetchers.pdf import fetch_pdf_bytes
 from qanorm.jobs.scheduler import create_job
-from qanorm.models import Document, DocumentSource, DocumentVersion, RawArtifact
+from qanorm.models import Document, DocumentNode, DocumentReference, DocumentSource, DocumentVersion, RawArtifact
 from qanorm.normalizers.codes import normalize_document_code
+from qanorm.normalizers.structure import normalize_document_structure_text
 from qanorm.normalizers.statuses import resolve_status_conflict
 from qanorm.ocr.quality import calculate_ocr_confidence, is_low_confidence_parse
 from qanorm.ocr.renderer import render_pdf_pages
@@ -33,6 +35,8 @@ from qanorm.parsers.html_document_parser import HtmlTextExtractionResult, extrac
 from qanorm.parsers.pdf_text_parser import PdfTextExtractionResult, extract_text_from_pdf
 from qanorm.repositories import (
     DocumentRepository,
+    DocumentNodeRepository,
+    DocumentReferenceRepository,
     DocumentSourceRepository,
     DocumentVersionRepository,
     IngestionJobRepository,
@@ -88,6 +92,17 @@ class OCRProcessingResult:
     parse_confidence: float
     low_confidence_parse: bool
     saved_artifact_count: int
+    queued_job_id: str | None = None
+
+
+@dataclass(slots=True)
+class StructureNormalizationPipelineResult:
+    """Result of structure normalization and persistence."""
+
+    status: str
+    source_artifact_type: str
+    node_count: int
+    reference_count: int
     queued_job_id: str | None = None
 
 
@@ -465,6 +480,99 @@ def run_document_ocr(
     )
 
 
+def normalize_document_structure(
+    session: Session,
+    *,
+    document_version_id: UUID | str,
+) -> StructureNormalizationPipelineResult:
+    """Normalize extracted document text into structural nodes and references."""
+
+    artifact_repository = RawArtifactRepository(session)
+    version_repository = DocumentVersionRepository(session)
+    document_repository = DocumentRepository(session)
+    node_repository = DocumentNodeRepository(session)
+    reference_repository = DocumentReferenceRepository(session)
+    job_repository = IngestionJobRepository(session)
+
+    version_uuid = UUID(str(document_version_id))
+    version = version_repository.get(version_uuid)
+    if version is None:
+        raise ValueError(f"Document version not found: {document_version_id}")
+
+    document = document_repository.get(version.document_id)
+    if document is None:
+        raise ValueError(f"Document not found for version: {document_version_id}")
+
+    artifacts = artifact_repository.list_for_document_version(version_uuid)
+    source_artifact = _select_structure_source_artifact(artifacts)
+    if source_artifact is None:
+        raise ValueError(f"No text artifacts found for structure normalization: {document_version_id}")
+
+    source_text = Path(source_artifact.storage_path).read_text(encoding="utf-8")
+    normalized = normalize_document_structure_text(
+        source_text,
+        parse_confidence=version.parse_confidence,
+    )
+
+    node_id_by_order: dict[int, UUID] = {}
+    node_models: list[DocumentNode] = []
+    for draft in normalized.nodes:
+        node_id = uuid4()
+        node_id_by_order[draft.order_index] = node_id
+        node_models.append(
+            DocumentNode(
+                id=node_id,
+                document_version_id=version_uuid,
+                parent_node_id=node_id_by_order.get(draft.parent_order_index),
+                node_type=draft.node_type,
+                label=draft.label,
+                title=draft.title,
+                text=draft.text,
+                order_index=draft.order_index,
+                page_from=draft.page_from,
+                page_to=draft.page_to,
+                char_start=draft.char_start,
+                char_end=draft.char_end,
+                parse_confidence=draft.parse_confidence,
+            )
+        )
+    if node_models:
+        node_repository.add_many(node_models)
+
+    reference_models: list[DocumentReference] = []
+    for draft in normalized.references:
+        matched_document = document_repository.get_by_normalized_code(draft.referenced_code_normalized)
+        reference_models.append(
+            DocumentReference(
+                document_version_id=version_uuid,
+                source_node_id=node_id_by_order[draft.source_order_index],
+                reference_text=draft.reference_text,
+                referenced_code_normalized=draft.referenced_code_normalized,
+                matched_document_id=matched_document.id if matched_document is not None else None,
+                match_confidence=draft.match_confidence if matched_document is not None else 0.5,
+            )
+        )
+    if reference_models:
+        reference_repository.add_many(reference_models)
+
+    version.processing_status = ProcessingStatus.NORMALIZED
+    session.flush()
+
+    next_job = create_job(
+        job_repository,
+        job_type=JobType.INDEX_DOCUMENT,
+        payload={"document_version_id": str(version_uuid)},
+    )
+
+    return StructureNormalizationPipelineResult(
+        status="ok",
+        source_artifact_type=source_artifact.artifact_type.value,
+        node_count=len(node_models),
+        reference_count=len(reference_models),
+        queued_job_id=str(next_job.id),
+    )
+
+
 def _detect_document_type(document_code: str) -> str:
     code_upper = document_code.upper()
     if code_upper.startswith("СП ") or code_upper.startswith("SP "):
@@ -498,6 +606,24 @@ def _choose_best_text_source(
         return "pdf", pdf_text, pdf_result.text_layer_score, pdf_result.needs_ocr
 
     return "none", "", 0.0, True
+
+
+def _select_structure_source_artifact(artifacts: list[RawArtifact]) -> RawArtifact | None:
+    ocr_artifact = next((item for item in artifacts if item.artifact_type is ArtifactType.OCR_RAW), None)
+    if ocr_artifact is not None:
+        return ocr_artifact
+
+    snapshot_artifacts = [item for item in artifacts if item.artifact_type is ArtifactType.PARSED_TEXT_SNAPSHOT]
+    if not snapshot_artifacts:
+        return None
+
+    def artifact_rank(item: RawArtifact) -> tuple[int, int]:
+        relative_path = item.relative_path.lower()
+        html_bonus = 1 if "html" in relative_path else 0
+        file_size = int(item.file_size or 0)
+        return (html_bonus, file_size)
+
+    return max(snapshot_artifacts, key=artifact_rank)
 
 
 def _download_text_artifact(
