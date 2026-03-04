@@ -38,6 +38,8 @@ class AppFileConfig(BaseModel):
     max_retries: int = Field(ge=0)
     rate_limit_per_second: float = Field(gt=0)
     user_agent: str = Field(min_length=1)
+    ocr_render_dpi: int = Field(default=300, ge=72)
+    ocr_low_confidence_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
 
 
 class SourcesConfig(BaseModel):
@@ -116,6 +118,13 @@ def load_runtime_config(config_dir: Path = DEFAULT_CONFIG_DIR) -> RuntimeConfig:
     sources = load_sources_config(config_dir=config_dir)
     statuses = load_statuses_config(config_dir=config_dir)
     return RuntimeConfig(env=env, app=app, sources=sources, statuses=statuses)
+
+
+@lru_cache(maxsize=1)
+def get_app_config() -> AppFileConfig:
+    """Return cached app-file configuration."""
+
+    return load_app_file_config()
 
 
 @lru_cache(maxsize=1)

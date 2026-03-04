@@ -9,6 +9,8 @@ def test_runtime_config_smoke_loads_defaults() -> None:
 
     assert settings.env.app_env == "local"
     assert settings.app.request_timeout_seconds == 30
+    assert settings.app.ocr_render_dpi == 300
+    assert settings.app.ocr_low_confidence_threshold == 0.7
     assert len(settings.sources.seed_urls) == 4
     assert "взамен" in settings.statuses.active
 

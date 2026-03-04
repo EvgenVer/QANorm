@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
@@ -19,6 +20,9 @@ from qanorm.jobs.scheduler import create_job
 from qanorm.models import Document, DocumentSource, DocumentVersion, RawArtifact
 from qanorm.normalizers.codes import normalize_document_code
 from qanorm.normalizers.statuses import resolve_status_conflict
+from qanorm.ocr.quality import calculate_ocr_confidence, is_low_confidence_parse
+from qanorm.ocr.renderer import render_pdf_pages
+from qanorm.ocr.tesseract import merge_ocr_page_texts, run_ocr_for_pages
 from qanorm.parsers.card_parser import (
     DocumentCardData,
     extract_card_page_image_urls,
@@ -71,6 +75,19 @@ class ExtractedTextResult:
     text_length: int
     needs_ocr: bool
     saved_snapshot_count: int
+    queued_job_id: str | None = None
+
+
+@dataclass(slots=True)
+class OCRProcessingResult:
+    """Result of OCR fallback processing for a document version."""
+
+    status: str
+    page_count: int
+    text_length: int
+    parse_confidence: float
+    low_confidence_parse: bool
+    saved_artifact_count: int
     queued_job_id: str | None = None
 
 
@@ -364,6 +381,90 @@ def extract_document_text(
     )
 
 
+def run_document_ocr(
+    session: Session,
+    *,
+    document_version_id: UUID | str,
+    raw_store: RawFileStore | None = None,
+    render_dpi: int | None = None,
+    languages: str | tuple[str, ...] | None = None,
+) -> OCRProcessingResult:
+    """Run OCR fallback for a stored document version and queue normalization."""
+
+    artifact_repository = RawArtifactRepository(session)
+    version_repository = DocumentVersionRepository(session)
+    document_repository = DocumentRepository(session)
+    job_repository = IngestionJobRepository(session)
+    store = raw_store or RawFileStore()
+    version_uuid = UUID(str(document_version_id))
+    version = version_repository.get(version_uuid)
+    if version is None:
+        raise ValueError(f"Document version not found: {document_version_id}")
+
+    document = document_repository.get(version.document_id)
+    if document is None:
+        raise ValueError(f"Document not found for version: {document_version_id}")
+
+    artifacts = artifact_repository.list_for_document_version(version_uuid)
+    page_image_paths = [Path(item.storage_path) for item in artifacts if item.artifact_type is ArtifactType.PAGE_IMAGE]
+
+    if not page_image_paths:
+        pdf_artifact = next((item for item in artifacts if item.artifact_type is ArtifactType.PDF_RAW), None)
+        if pdf_artifact is None:
+            raise ValueError(f"No OCR input artifacts found for version: {document_version_id}")
+
+        with TemporaryDirectory(prefix="qanorm-ocr-") as temp_dir:
+            rendered_pages = render_pdf_pages(
+                pdf_artifact.storage_path,
+                output_dir=temp_dir,
+                dpi=render_dpi,
+            )
+            page_image_paths = [item.image_path for item in rendered_pages]
+            page_results = run_ocr_for_pages(page_image_paths, languages=languages)
+    else:
+        page_results = run_ocr_for_pages(page_image_paths, languages=languages)
+
+    combined_text = merge_ocr_page_texts(page_results)
+    confidence = calculate_ocr_confidence([item.text for item in page_results])
+    low_confidence_parse = is_low_confidence_parse(confidence)
+
+    saved_artifacts: list[RawArtifact] = []
+    ocr_artifact = _persist_artifact(
+        artifact_repository=artifact_repository,
+        raw_store=store,
+        document_version_id=version_uuid,
+        document_code=document.display_code,
+        artifact_type=ArtifactType.OCR_RAW,
+        payload=combined_text,
+        source_url="snapshot://ocr.txt",
+        artifact_name=ArtifactType.OCR_RAW.value,
+        is_text=True,
+    )
+    if ocr_artifact is not None:
+        saved_artifacts.append(ocr_artifact)
+
+    version.has_ocr = True
+    version.parse_confidence = confidence
+    version.processing_status = ProcessingStatus.EXTRACTED
+    session.flush()
+
+    next_job = create_job(
+        job_repository,
+        job_type=JobType.NORMALIZE_DOCUMENT,
+        payload={"document_version_id": str(version_uuid)},
+    )
+
+    return OCRProcessingResult(
+        status="ok",
+        page_count=len(page_results),
+        text_length=len(combined_text),
+        parse_confidence=confidence,
+        low_confidence_parse=low_confidence_parse,
+        saved_artifact_count=len(saved_artifacts),
+        queued_job_id=str(next_job.id),
+    )
+
+
 def _detect_document_type(document_code: str) -> str:
     code_upper = document_code.upper()
     if code_upper.startswith("СП ") or code_upper.startswith("SP "):
@@ -535,6 +636,8 @@ def _infer_extension(source_url: str, *, fallback: str) -> str:
 
 def _infer_mime_type(extension: str) -> str:
     normalized = extension.lower()
+    if normalized == ".txt":
+        return "text/plain"
     if normalized in {".html", ".htm"}:
         return "text/html"
     if normalized == ".pdf":

@@ -3,3 +3,5 @@ app:
   max_retries: 3
   rate_limit_per_second: 2.0
   user_agent: "QANormBot/0.1"
+  ocr_render_dpi: 300
+  ocr_low_confidence_threshold: 0.7
