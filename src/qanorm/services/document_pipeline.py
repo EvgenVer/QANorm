@@ -17,7 +17,9 @@ from qanorm.db.types import ArtifactType, JobType, ProcessingStatus, StatusNorma
 from qanorm.fetchers.html import fetch_html_document
 from qanorm.fetchers.images import fetch_image_bytes
 from qanorm.fetchers.pdf import fetch_pdf_bytes
+from qanorm.indexing.indexer import index_document_version
 from qanorm.jobs.scheduler import create_job
+from qanorm.logging import get_ingestion_logger
 from qanorm.models import Document, DocumentNode, DocumentReference, DocumentSource, DocumentVersion, RawArtifact
 from qanorm.normalizers.codes import normalize_document_code
 from qanorm.normalizers.structure import normalize_document_structure_text
@@ -114,6 +116,9 @@ class StructureNormalizationPipelineResult:
     queued_job_id: str | None = None
 
 
+logger = get_ingestion_logger()
+
+
 def get_pipeline_status() -> dict[str, Any]:
     """Return a minimal pipeline status snapshot."""
 
@@ -121,6 +126,75 @@ def get_pipeline_status() -> dict[str, Any]:
         "status": "ready",
         "message": "Document pipeline shell is available.",
     }
+
+
+def orchestrate_document_pipeline_step(
+    session: Session,
+    *,
+    job_type: JobType | str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Dispatch one document pipeline step by job type."""
+
+    normalized_job_type = JobType(job_type)
+    logger.info(
+        "Starting pipeline step '%s' for document_version_id=%s",
+        normalized_job_type.value,
+        payload.get("document_version_id"),
+    )
+
+    if normalized_job_type is JobType.DOWNLOAD_ARTIFACTS:
+        response = _dataclass_to_dict(
+            download_document_artifacts(
+                session,
+                document_version_id=payload["document_version_id"],
+                document_code=payload["document_code"],
+                card_url=payload["card_url"],
+                html_url=payload.get("html_url"),
+                pdf_url=payload.get("pdf_url"),
+                print_url=payload.get("print_url"),
+                has_full_html=bool(payload.get("has_full_html")),
+                has_page_images=bool(payload.get("has_page_images")),
+            )
+        )
+    elif normalized_job_type is JobType.EXTRACT_TEXT:
+        response = _dataclass_to_dict(
+            extract_document_text(
+                session,
+                document_version_id=payload["document_version_id"],
+            )
+        )
+    elif normalized_job_type is JobType.RUN_OCR:
+        response = _dataclass_to_dict(
+            run_document_ocr(
+                session,
+                document_version_id=payload["document_version_id"],
+            )
+        )
+    elif normalized_job_type is JobType.NORMALIZE_DOCUMENT:
+        response = _dataclass_to_dict(
+            normalize_document_structure(
+                session,
+                document_version_id=payload["document_version_id"],
+            )
+        )
+    elif normalized_job_type is JobType.INDEX_DOCUMENT:
+        response = _dataclass_to_dict(
+            index_document_version(
+                session,
+                document_version_id=payload["document_version_id"],
+            )
+        )
+    else:
+        raise ValueError(f"Unsupported pipeline step: {normalized_job_type.value}")
+
+    logger.info(
+        "Completed pipeline step '%s' for document_version_id=%s with status '%s'",
+        normalized_job_type.value,
+        payload.get("document_version_id"),
+        response.get("status"),
+    )
+    return response
 
 
 def process_document_card(
@@ -230,6 +304,12 @@ def persist_document_card(
             "has_page_images": card_data.has_page_images,
         },
     )
+    logger.info(
+        "Queued pipeline transition '%s' -> '%s' for document_version_id=%s",
+        JobType.PROCESS_DOCUMENT_CARD.value,
+        JobType.DOWNLOAD_ARTIFACTS.value,
+        version.id,
+    )
 
     return DocumentCardProcessResult(
         status="queued",
@@ -318,6 +398,12 @@ def download_document_artifacts(
         job_type=JobType.EXTRACT_TEXT,
         payload={"document_version_id": str(version_uuid)},
     )
+    logger.info(
+        "Queued pipeline transition '%s' -> '%s' for document_version_id=%s",
+        JobType.DOWNLOAD_ARTIFACTS.value,
+        JobType.EXTRACT_TEXT.value,
+        version_uuid,
+    )
 
     return DownloadArtifactsResult(
         status="ok",
@@ -395,6 +481,13 @@ def extract_document_text(
         job_repository,
         job_type=JobType.RUN_OCR if needs_ocr else JobType.NORMALIZE_DOCUMENT,
         payload={"document_version_id": str(version_uuid)},
+    )
+    next_job_type = JobType.RUN_OCR if needs_ocr else JobType.NORMALIZE_DOCUMENT
+    logger.info(
+        "Queued pipeline transition '%s' -> '%s' for document_version_id=%s",
+        JobType.EXTRACT_TEXT.value,
+        next_job_type.value,
+        version_uuid,
     )
 
     return ExtractedTextResult(
@@ -479,6 +572,12 @@ def run_document_ocr(
         job_type=JobType.NORMALIZE_DOCUMENT,
         payload={"document_version_id": str(version_uuid)},
     )
+    logger.info(
+        "Queued pipeline transition '%s' -> '%s' for document_version_id=%s",
+        JobType.RUN_OCR.value,
+        JobType.NORMALIZE_DOCUMENT.value,
+        version_uuid,
+    )
 
     return OCRProcessingResult(
         status="ok",
@@ -531,6 +630,10 @@ def normalize_document_structure(
     )
 
     if comparison.is_duplicate:
+        logger.info(
+            "Detected duplicate normalized content for document_version_id=%s; skipping index queue",
+            version_uuid,
+        )
         skip_duplicate_version(
             session,
             document_version_id=version_uuid,
@@ -602,6 +705,12 @@ def normalize_document_structure(
         job_repository,
         job_type=JobType.INDEX_DOCUMENT,
         payload={"document_version_id": str(version_uuid)},
+    )
+    logger.info(
+        "Queued pipeline transition '%s' -> '%s' for document_version_id=%s",
+        JobType.NORMALIZE_DOCUMENT.value,
+        JobType.INDEX_DOCUMENT.value,
+        version_uuid,
     )
 
     return StructureNormalizationPipelineResult(
@@ -817,3 +926,11 @@ def _infer_mime_type(extension: str) -> str:
     if normalized in {".jpg", ".jpeg"}:
         return "image/jpeg"
     return "application/octet-stream"
+
+
+def _dataclass_to_dict(value: Any) -> dict[str, Any]:
+    if hasattr(value, "__dataclass_fields__"):
+        return {key: getattr(value, key) for key in value.__dataclass_fields__}
+    if isinstance(value, dict):
+        return dict(value)
+    raise TypeError(f"Unsupported pipeline result type: {type(value)!r}")
