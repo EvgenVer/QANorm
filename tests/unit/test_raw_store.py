@@ -10,6 +10,7 @@ from qanorm.storage.checksums import sha256_bytes, sha256_file
 from qanorm.storage.paths import (
     build_artifact_filename,
     build_artifact_relative_path,
+    build_document_storage_key,
     ensure_parent_directory,
     get_raw_storage_root,
     resolve_storage_path,
@@ -40,9 +41,16 @@ def test_build_artifact_filename_uses_code_version_and_type() -> None:
         extension="PDF",
     )
 
-    assert filename == (
-        "SP_20.13330_2016__12345678-1234-5678-1234-567812345678__pdf.pdf"
+    assert filename == "pdf.pdf"
+
+
+def test_build_document_storage_key_is_short_and_deterministic() -> None:
+    document_key = build_document_storage_key(
+        "Пособие по проектированию бетонных и железобетонных конструкций из тяжелого бетона"
     )
+
+    assert document_key == "Пособие_по_проектировани-3bf8695a166a"
+    assert len(document_key) <= 37
 
 
 def test_build_artifact_relative_path_uses_nested_logical_structure() -> None:
@@ -54,8 +62,24 @@ def test_build_artifact_relative_path_uses_nested_logical_structure() -> None:
     )
 
     assert relative_path == Path(
-        "SP_20.13330_2016/ver-001/SP_20.13330_2016__ver-001__html.html"
+        "SP_20.13330_2016-65c4f32e9560/ver-001/html.html"
     )
+
+
+def test_build_artifact_relative_path_stays_compact_for_long_document_code() -> None:
+    relative_path = build_artifact_relative_path(
+        document_code=(
+            "Пособие по проектированию бетонных и железобетонных конструкций из тяжелого бетона "
+            "без предварительного напряжения арматуры (к СП 52-101-2003)"
+        ),
+        version_id="1b48e063-3dc8-4b38-abc4-48a1a848a00e",
+        artifact_type="html_raw",
+        extension=".html",
+    )
+
+    assert len(str(relative_path)) < 100
+    assert relative_path.parts[0].startswith("Пособие_по_проектировани-")
+    assert relative_path.name == "html_raw.html"
 
 
 def test_resolve_storage_path_rejects_escape_attempts(tmp_path: Path) -> None:

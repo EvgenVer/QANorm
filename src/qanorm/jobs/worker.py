@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 from qanorm.db.session import session_scope
 from qanorm.db.types import JobType
@@ -145,6 +146,7 @@ def process_claimed_job(session: Any, job: IngestionJob) -> ProcessedJobResult:
         result = dispatch_job(session, job)
     except Exception as exc:
         error_message = str(exc)
+        session.rollback()
         if _is_temporary_error(exc):
             retry_job_after_temporary_error(repository, job, error_message)
             logger.warning("Retrying job %s (%s): %s", job.id, job.job_type.value, error_message)
@@ -202,6 +204,11 @@ def _is_temporary_error(exc: Exception) -> bool:
         return True
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code >= 500 or exc.response.status_code == 429
+    if isinstance(exc, OperationalError):
+        message = str(exc).lower()
+        return "deadlock detected" in message or "could not serialize access" in message
+    if isinstance(exc, DBAPIError):
+        return bool(exc.connection_invalidated)
     return isinstance(exc, (httpx.RequestError, TimeoutError, ConnectionError, OSError))
 
 

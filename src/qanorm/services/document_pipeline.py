@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 from uuid import uuid4
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from qanorm.db.types import ArtifactType, JobType, ProcessingStatus, StatusNormalized
@@ -255,7 +256,24 @@ def persist_document_card(
             title=card_data.document_title,
             status_normalized=resolved_status,
         )
-        document_repository.add(document)
+        try:
+            document_repository.add(document)
+        except IntegrityError:
+            # Another worker may persist the same canonical document after the
+            # local lookup but before this insert; recover by reloading it.
+            session.rollback()
+            document = find_existing_document_by_normalized_code(
+                session,
+                normalized_code=normalized_code,
+            )
+            if document is None:
+                raise
+            document.display_code = card_data.document_code
+            document.document_type = document.document_type or _detect_document_type(card_data.document_code)
+            document.title = card_data.document_title
+            document.status_normalized = resolved_status
+            document.last_seen_at = now
+            session.flush()
     else:
         document.display_code = card_data.document_code
         document.document_type = document.document_type or _detect_document_type(card_data.document_code)
