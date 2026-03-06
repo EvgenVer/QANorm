@@ -396,7 +396,8 @@ def download_document_artifacts(
         if saved_artifact is not None:
             saved_artifacts.append(saved_artifact)
 
-    if has_page_images:
+    should_download_page_images = has_page_images and html_missing and pdf_missing
+    if should_download_page_images:
         card_html = fetch_document_card(card_url)
         for page_index, image_url in enumerate(extract_card_page_image_urls(card_url, card_html), start=1):
             saved_artifact = _download_binary_artifact(

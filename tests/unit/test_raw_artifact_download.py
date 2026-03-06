@@ -135,6 +135,47 @@ def test_download_document_artifacts_downloads_page_images_as_fallback(
     assert all(item.artifact_type is ArtifactType.PAGE_IMAGE for item in raw_artifacts)
 
 
+def test_download_document_artifacts_skips_page_images_when_html_or_pdf_exists(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    version = DocumentVersion(id=uuid4(), document_id=uuid4())
+    session = _session_with_execute_side_effect(None, None, None)
+    session.get.return_value = version
+
+    monkeypatch.setattr(
+        "qanorm.services.document_pipeline.fetch_html_document",
+        lambda url: "<html><body>full html</body></html>",
+    )
+    monkeypatch.setattr(
+        "qanorm.services.document_pipeline.fetch_pdf_bytes",
+        lambda url: b"%PDF-1.7",
+    )
+
+    fetch_card_mock = MagicMock(return_value="<html></html>")
+    monkeypatch.setattr("qanorm.services.document_pipeline.fetch_document_card", fetch_card_mock)
+    monkeypatch.setattr("qanorm.services.document_pipeline.fetch_image_bytes", lambda url: b"GIF89a")
+
+    result = download_document_artifacts(
+        session,
+        document_version_id=version.id,
+        document_code="Federal Law 3-FZ",
+        card_url="https://example.test/card",
+        html_url="https://example.test/doc.htm",
+        pdf_url="https://example.test/doc.pdf",
+        print_url=None,
+        has_full_html=True,
+        has_page_images=True,
+        raw_store=RawFileStore(base_path=tmp_path),
+    )
+
+    assert result.saved_artifact_count == 2
+    assert fetch_card_mock.call_count == 0
+    added_instances = [call.args[0] for call in session.add.call_args_list]
+    raw_artifacts = [item for item in added_instances if isinstance(item, RawArtifact)]
+    assert all(item.artifact_type is not ArtifactType.PAGE_IMAGE for item in raw_artifacts)
+
+
 def test_download_document_artifacts_skips_existing_artifact_records(
     tmp_path: Path,
     monkeypatch,
