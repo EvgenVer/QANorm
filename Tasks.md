@@ -1,17 +1,17 @@
-# Задачи Этапа 1
+# Задачи проекта
 
 ## Назначение документа
 
-Документ содержит детальную декомпозицию Этапа 1 из `Plan.md` до уровня последовательных, небольших и завершенных задач.
+Документ содержит детальную декомпозицию Этапа 1 и Этапа 2 из `Plan.md` до уровня последовательных, небольших и завершенных задач.
 
 Требования к этому списку:
 
 - задачи должны выполняться строго последовательно;
 - на каждом шаге результат должен быть завершенным и проверяемым;
 - следующий шаг должен опираться на результат предыдущего;
-- список должен покрывать весь Этап 1 без крупных логических пропусков.
+- список должен покрывать каждый этап без крупных логических пропусков.
 
-Этот документ уже отражает результат повторного анализа и корректировки первичной декомпозиции.
+Этот документ уже отражает результат повторного анализа и корректировки первичной декомпозиции обоих этапов.
 
 ---
 
@@ -22,6 +22,7 @@
 - Если задача подразумевает артефакт, он должен быть создан или обновлен в репозитории.
 - Если задача подразумевает код, должен быть доступен минимальный проверочный сценарий.
 - Если задача подразумевает инфраструктуру, должен быть доступен локальный способ ее проверить.
+- Этап 2 начинать только после подтвержденного полного завершения Этапа 1.
 
 ---
 
@@ -566,3 +567,505 @@
 463. [x] Зафиксировать итоговый отчет полного эксплуатационного прогона Этапа 1.
 464. [x] Подтвердить, что локальная база нормативных документов реально наполнена и пригодна для retrieval.
 465. [x] Подтвердить готовность перехода к Этапу 2 только после успешного завершения полного прогона.
+
+---
+
+## 3. Последовательная декомпозиция Этапа 2
+
+Ниже приведен результат повторной декомпозиции Этапа 2 после дополнительного анализа полноты и зависимостей.
+
+В список включены не только задачи, явно перечисленные в `Plan.md`, но и обязательные вспомогательные шаги, без которых реализация Этапа 2 будет неполной:
+
+- служебные persistent-сущности для аудита и журналирования поиска;
+- persistent-сущности для локального корпуса trusted sources;
+- инфраструктурные шаги для `Redis`, `ARQ`, `SearXNG` и observability stack;
+- контур изоляции сессий, который должен покрывать не только API, но и кэш, фоновые задачи и временные артефакты.
+
+### Блок Z. Подготовка репозитория и базового каркаса Этапа 2
+
+466. [ ] Обновить `README.md` с описанием цели и архитектуры Этапа 2.
+467. [ ] Обновить `.gitignore` для `web/node_modules`, `.next`, кэшей frontend и артефактов локальной инфраструктуры Этапа 2.
+468. [ ] Обновить `.env.example` списком переменных окружения Этапа 2.
+469. [ ] Добавить в `pyproject.toml` backend-зависимости Этапа 2 (`fastapi`, `uvicorn`, `redis`, `arq`, `aiogram`, `sse-starlette` или эквивалент).
+470. [ ] Добавить в `pyproject.toml` dev-зависимости Этапа 2 (`pytest-asyncio`, средства мокирования HTTP и эквивалентные инструменты).
+471. [ ] Создать файл `configs/qa.yaml` с базовыми настройками Этапа 2.
+472. [ ] Расширить `src/qanorm/settings.py` схемой настроек Этапа 2.
+473. [ ] Реализовать загрузку `configs/qa.yaml` в `settings.py`.
+474. [ ] Реализовать валидацию обязательных настроек для `Redis`, model providers, web UI, Telegram и web search.
+475. [ ] Создать директорию `src/qanorm/api/`.
+476. [ ] Создать файл `src/qanorm/api/__init__.py`.
+477. [ ] Создать директорию `src/qanorm/api/routes/`.
+478. [ ] Создать директорию `src/qanorm/agents/`.
+479. [ ] Создать файл `src/qanorm/agents/__init__.py`.
+480. [ ] Создать директорию `src/qanorm/providers/`.
+481. [ ] Создать файл `src/qanorm/providers/__init__.py`.
+482. [ ] Создать директорию `src/qanorm/tools/`.
+483. [ ] Создать файл `src/qanorm/tools/__init__.py`.
+484. [ ] Создать директорию `src/qanorm/security/`.
+485. [ ] Создать директорию `src/qanorm/observability/`.
+486. [ ] Создать директорию `src/qanorm/audit/` и `src/qanorm/prompts/`.
+487. [ ] Создать директорию `src/qanorm/integrations/telegram/` и `src/qanorm/prompts/templates/`.
+488. [ ] Создать директорию `src/qanorm/workers/`.
+489. [ ] Создать директорию `web/`.
+490. [ ] Создать файл `docker-compose.stage2.yml` для локальной инфраструктуры Этапа 2.
+491. [ ] Добавить в `docker-compose.stage2.yml` сервис `Redis` для backend и worker Этапа 2.
+492. [ ] Создать файл `Dockerfile.backend` для общего Python-образа Этапа 2.
+493. [ ] Настроить в `Dockerfile.backend` установку backend-зависимостей и копирование исходников проекта.
+494. [ ] Подготовить в `Dockerfile.backend` общий runtime для `api` и `worker` без дублирования образов.
+495. [ ] Создать файл `Dockerfile.web` для `Next.js` frontend-а.
+496. [ ] Настроить в `Dockerfile.web` установку frontend-зависимостей и сборку web-приложения.
+497. [ ] Добавить в `docker-compose.stage2.yml` сервис `api` на базе `Dockerfile.backend`.
+498. [ ] Добавить в `docker-compose.stage2.yml` сервис `worker` на базе того же backend-образа с отдельной командой запуска.
+499. [ ] Добавить в `docker-compose.stage2.yml` сервис `web` на базе `Dockerfile.web`.
+500. [ ] Добавить в `docker-compose.stage2.yml` профиль `core` для `api`, `worker`, `web` и `Redis`.
+501. [ ] Добавить в `docker-compose.stage2.yml` опциональный профиль `db` с `PostgreSQL` для изолированных прогонов.
+502. [ ] Настроить env wiring и volume mounts для `api`, `worker` и `web`.
+503. [ ] Настроить healthchecks и зависимости по готовности для `api`, `worker` и `web`.
+504. [ ] Выполнить smoke-проверку `docker compose --profile core up` для локального старта Этапа 2.
+
+### Блок AA. Модель данных и миграции Этапа 2
+
+505. [ ] Создать файл `src/qanorm/models/qa_session.py`.
+506. [ ] Зафиксировать SQLAlchemy-модель `qa_sessions`.
+507. [ ] Создать файл `src/qanorm/models/qa_message.py`.
+508. [ ] Зафиксировать SQLAlchemy-модель `qa_messages`.
+509. [ ] Создать файл `src/qanorm/models/qa_query.py`.
+510. [ ] Зафиксировать SQLAlchemy-модель `qa_queries`.
+511. [ ] Создать файл `src/qanorm/models/qa_subtask.py`.
+512. [ ] Зафиксировать SQLAlchemy-модель `qa_subtasks`.
+513. [ ] Создать файл `src/qanorm/models/qa_evidence.py`.
+514. [ ] Зафиксировать SQLAlchemy-модель `qa_evidence`.
+515. [ ] Создать файл `src/qanorm/models/qa_answer.py`.
+516. [ ] Зафиксировать SQLAlchemy-модель `qa_answers`.
+517. [ ] Создать файл `src/qanorm/models/verification_report.py`.
+518. [ ] Зафиксировать SQLAlchemy-модель `verification_reports`.
+519. [ ] Создать файл `src/qanorm/models/tool_invocation.py`.
+520. [ ] Зафиксировать SQLAlchemy-модель `tool_invocations`.
+521. [ ] Создать файл `src/qanorm/models/freshness_check.py`.
+522. [ ] Зафиксировать SQLAlchemy-модель `freshness_checks`.
+523. [ ] Создать файл `src/qanorm/models/security_event.py`.
+524. [ ] Зафиксировать SQLAlchemy-модель `security_events`.
+525. [ ] Создать файл `src/qanorm/models/audit_event.py`.
+526. [ ] Зафиксировать SQLAlchemy-модель `audit_events`.
+527. [ ] Создать файл `src/qanorm/models/search_event.py`.
+528. [ ] Зафиксировать SQLAlchemy-модель `search_events`.
+529. [ ] Создать файл `src/qanorm/models/trusted_source_document.py`.
+530. [ ] Зафиксировать SQLAlchemy-модель `trusted_source_documents`.
+531. [ ] Создать файл `src/qanorm/models/trusted_source_chunk.py`.
+532. [ ] Зафиксировать SQLAlchemy-модель `trusted_source_chunks`.
+533. [ ] Создать файл `src/qanorm/models/trusted_source_sync_run.py`.
+534. [ ] Зафиксировать SQLAlchemy-модель `trusted_source_sync_runs`.
+535. [ ] Экспортировать все новые модели Этапа 2 в `src/qanorm/models/__init__.py`.
+536. [ ] Добавить внешние ключи и ограничения целостности между сущностями Этапа 2.
+537. [ ] Добавить индексы для частых выборок по `session_id`, `query_id`, `status`, `created_at` и ключам поиска.
+538. [ ] Создать Alembic-ревизию для таблиц Этапа 2.
+539. [ ] Проверить применение миграции Этапа 2 на чистой БД.
+540. [ ] Проверить совместимость миграции Этапа 2 с уже наполненной БД Этапа 1.
+
+### Блок AB. Репозитории доступа к данным Этапа 2
+
+541. [ ] Создать файл `src/qanorm/repositories/qa_sessions.py`.
+542. [ ] Реализовать создание записи `qa_session`.
+543. [ ] Реализовать получение `qa_session` по внутреннему `id`.
+544. [ ] Реализовать получение `qa_session` по внешним канальным идентификаторам.
+545. [ ] Реализовать обновление статуса, summary и времени жизни сессии.
+546. [ ] Создать файл `src/qanorm/repositories/qa_messages.py`.
+547. [ ] Реализовать добавление сообщения в историю `qa_messages`.
+548. [ ] Реализовать выборку истории сообщений по `session_id`.
+549. [ ] Создать файл `src/qanorm/repositories/qa_queries.py`.
+550. [ ] Реализовать создание записи `qa_query`.
+551. [ ] Реализовать обновление статуса `qa_query` и флагов использования внешних источников.
+552. [ ] Создать файл `src/qanorm/repositories/qa_subtasks.py`.
+553. [ ] Реализовать сохранение подзадачи в `qa_subtasks`.
+554. [ ] Реализовать выборку дерева подзадач по `query_id`.
+555. [ ] Создать файл `src/qanorm/repositories/qa_evidence.py`.
+556. [ ] Реализовать пакетное сохранение evidence-блоков.
+557. [ ] Реализовать выборку evidence по `query_id` и `subtask_id`.
+558. [ ] Создать файл `src/qanorm/repositories/qa_answers.py`.
+559. [ ] Реализовать сохранение и получение финального ответа.
+560. [ ] Создать файл `src/qanorm/repositories/verification_reports.py`.
+561. [ ] Реализовать сохранение `verification_report`.
+562. [ ] Создать файл `src/qanorm/repositories/tool_invocations.py`.
+563. [ ] Реализовать сохранение вызова инструмента.
+564. [ ] Создать файл `src/qanorm/repositories/freshness_checks.py`.
+565. [ ] Реализовать сохранение и выборку результатов freshness check.
+566. [ ] Создать файл `src/qanorm/repositories/security_events.py`.
+567. [ ] Реализовать сохранение `security_event`.
+568. [ ] Создать файл `src/qanorm/repositories/audit_events.py`.
+569. [ ] Реализовать сохранение `audit_event`.
+570. [ ] Создать файл `src/qanorm/repositories/search_events.py`.
+571. [ ] Реализовать сохранение `search_event`.
+572. [ ] Создать файл `src/qanorm/repositories/trusted_sources.py`.
+573. [ ] Реализовать сохранение документа trusted source.
+574. [ ] Реализовать сохранение чанков trusted source.
+575. [ ] Реализовать сохранение sync run trusted source.
+
+### Блок AC. Сессионные сервисы и внутреннее состояние Этапа 2
+
+576. [ ] Создать файл `src/qanorm/models/qa_state.py`.
+577. [ ] Описать структуру `QueryState`.
+578. [ ] Описать структуру `SubtaskState`.
+579. [ ] Описать внутреннюю структуру `EvidenceBundle` и `PromptRenderContext`.
+580. [ ] Добавить в `QueryState` счетчики `verification_attempt_count`, `repair_attempt_count`, `tool_call_count` и `attempt_deadline`.
+581. [ ] Добавить в `QueryState` fingerprints для `evidence set` и `verification findings`.
+582. [ ] Создать директорию `src/qanorm/services/qa/`.
+583. [ ] Создать файл `src/qanorm/services/qa/__init__.py`.
+584. [ ] Создать файл `src/qanorm/services/qa/session_service.py`.
+585. [ ] Реализовать создание новой пользовательской сессии.
+586. [ ] Реализовать расчет и установку `expires_at` при создании сессии.
+587. [ ] Реализовать возобновление существующей пользовательской сессии.
+588. [ ] Реализовать обновление `session_summary`.
+589. [ ] Реализовать политику retention для истекших сессий, сообщений и связанных query-данных в `PostgreSQL`.
+590. [ ] Создать файл `src/qanorm/services/qa/context_service.py`.
+591. [ ] Реализовать загрузку истории сообщений в контекст запроса.
+592. [ ] Реализовать порог и механизм compaction для `session_summary`.
+593. [ ] Создать файл `src/qanorm/services/qa/query_service.py`.
+594. [ ] Реализовать создание нового query-run из пользовательского сообщения.
+595. [ ] Реализовать привязку пользовательского сообщения к `qa_query` и `qa_session`.
+596. [ ] Реализовать unit-тесты на session, context и query services.
+
+### Блок AD. FastAPI runtime, Redis и ARQ
+
+597. [ ] Создать файл `src/qanorm/api/app.py`.
+598. [ ] Реализовать фабрику `FastAPI` приложения.
+599. [ ] Создать файл `src/qanorm/api/dependencies.py`.
+600. [ ] Реализовать dependency provider для DB session.
+601. [ ] Реализовать dependency provider для настроек приложения.
+602. [ ] Создать файл `src/qanorm/api/errors.py`.
+603. [ ] Реализовать единый формат API-ошибок.
+604. [ ] Создать файл `src/qanorm/api/routes/health.py`.
+605. [ ] Реализовать endpoint `GET /health/live`.
+606. [ ] Реализовать endpoint `GET /health/ready`.
+607. [ ] Реализовать readiness-проверку подключения к `PostgreSQL`.
+608. [ ] Реализовать readiness-проверку подключения к `Redis`.
+609. [ ] Реализовать readiness-проверку публикации фоновой задачи в `ARQ`/`Redis`.
+610. [ ] Создать файл `src/qanorm/api/routes/sessions.py`.
+611. [ ] Создать файл `src/qanorm/api/routes/chat.py`.
+612. [ ] Создать Pydantic-схему `CreateSessionRequest`.
+613. [ ] Создать Pydantic-схему `SessionResponse`.
+614. [ ] Создать Pydantic-схему `MessageRequest`.
+615. [ ] Создать Pydantic-схему `MessageResponse`.
+616. [ ] Создать Pydantic-схему `StreamEvent`.
+617. [ ] Реализовать endpoint `POST /sessions`.
+618. [ ] Реализовать endpoint `GET /sessions`.
+619. [ ] Реализовать endpoint `GET /sessions/{session_id}`.
+620. [ ] Реализовать endpoint `GET /sessions/{session_id}/messages`.
+621. [ ] Реализовать endpoint `POST /sessions/{session_id}/queries`.
+622. [ ] Реализовать SSE-endpoint `GET /queries/{query_id}/events`.
+623. [ ] Реализовать фабрику подключения к `Redis`.
+624. [ ] Реализовать настройки и инициализацию `ARQ` для Этапа 2.
+625. [ ] Создать модуль bootstrap worker-а Этапа 2.
+626. [ ] Зарегистрировать базовые типы jobs Этапа 2.
+627. [ ] Реализовать per-session lock в `Redis`.
+628. [ ] Реализовать namespace strategy для `Redis`-ключей по `session_id`.
+629. [ ] Реализовать bridge публикации progress-событий между `ARQ`, `Redis` и SSE.
+630. [ ] Реализовать `cleanup_session_state_job` для очистки истекшего hot state сессий в `Redis`.
+631. [ ] Реализовать `cleanup_expired_sessions_job` для очистки истекших session/message/query-данных и временных артефактов.
+632. [ ] Выполнить smoke-проверку старта API, worker-а и health endpoints.
+
+### Блок AE. Абстракция моделей и provider gateway
+
+633. [ ] Создать файл `src/qanorm/providers/base.py` и файл `src/qanorm/prompts/registry.py`.
+634. [ ] Определить общие типы запросов и результатов для model providers и prompt rendering.
+635. [ ] Определить интерфейс `ChatModelProvider`.
+636. [ ] Определить интерфейс `EmbeddingProvider`.
+637. [ ] Определить интерфейс `RerankerProvider`.
+638. [ ] Определить capability-matrix провайдеров и ролей моделей.
+639. [ ] Реализовать provider registry и prompt registry.
+640. [ ] Реализовать provider factory по конфигурации, загрузчик prompt templates из каталога и регистрацию базовых шаблонов ролей.
+641. [ ] Реализовать выбор версии prompt template по конфигурации и окружению.
+642. [ ] Реализовать включение `prompt_template_name` и `prompt_version` в metadata результата prompt rendering.
+643. [ ] Реализовать общий timeout/retry wrapper для provider-вызовов.
+644. [ ] Создать общий reusable client для compatible transport провайдеров.
+645. [ ] Создать файл `src/qanorm/providers/gemini.py`.
+646. [ ] Реализовать chat-adapter для `Gemini`.
+647. [ ] Реализовать embedding-adapter для `Gemini`.
+648. [ ] Создать файл `src/qanorm/providers/openai.py`.
+649. [ ] Реализовать chat-adapter для `OpenAI`.
+650. [ ] Реализовать embedding-adapter для `OpenAI`.
+651. [ ] Создать файл `src/qanorm/providers/anthropic.py`.
+652. [ ] Реализовать chat-adapter для `Anthropic`.
+653. [ ] Создать файл `src/qanorm/providers/qwen.py`.
+654. [ ] Реализовать отдельный `QwenProvider` с поддержкой shared compatible transport и native API при необходимости.
+655. [ ] Создать файл `src/qanorm/providers/deepseek.py`.
+656. [ ] Реализовать отдельный `DeepSeekProvider` с поддержкой shared compatible transport и native API при необходимости.
+657. [ ] Создать файл `src/qanorm/providers/ollama.py`.
+658. [ ] Реализовать chat-adapter для `Ollama`.
+659. [ ] Реализовать embedding-adapter для `Ollama` либо capability-guard при отсутствии нужной модели.
+660. [ ] Создать файл `src/qanorm/providers/lmstudio.py`.
+661. [ ] Реализовать adapter для `LM Studio` через OpenAI-compatible transport.
+662. [ ] Создать файл `src/qanorm/providers/vllm.py`.
+663. [ ] Реализовать adapter для `vLLM` через OpenAI-compatible transport.
+664. [ ] Реализовать валидацию совместимости выбранных провайдеров с ролями `orchestration`, `synthesis` и `embeddings`.
+665. [ ] Реализовать unit-тесты на provider registry, prompt registry и capability validation.
+
+### Блок AF. Tool layer и контролируемый доступ к действиям
+
+666. [ ] Создать файл `src/qanorm/prompts/base.py`.
+667. [ ] Определить структуру `prompt template`, `prompt fragment` и `prompt version metadata`.
+668. [ ] Создать базовый system prompt template для `orchestrator`.
+669. [ ] Создать базовый system prompt template для `query_analyzer`.
+670. [ ] Создать базовый system prompt template для `task_decomposer`.
+671. [ ] Создать базовый system prompt template для `answer_synthesizer`.
+672. [ ] Создать базовый system prompt template для `citation_auditor`.
+673. [ ] Создать базовый system prompt template для `coverage_auditor`.
+674. [ ] Создать базовый system prompt template для `hallucination_guard`.
+675. [ ] Создать общие prompt fragments для маркировки источников, freshness warnings и safety policy.
+676. [ ] Реализовать unit-тесты на загрузку и рендеринг prompt templates и fragments.
+
+677. [ ] Создать файл `src/qanorm/tools/base.py`.
+678. [ ] Определить базовый интерфейс инструмента и контракт результата.
+679. [ ] Определить metadata инструмента для scope и policy checks.
+680. [ ] Создать файл `src/qanorm/tools/normative_search.py`.
+681. [ ] Реализовать `NormativeSearchTool`.
+682. [ ] Создать файл `src/qanorm/tools/document_fetch.py`.
+683. [ ] Реализовать `DocumentFetchTool`.
+684. [ ] Создать файл `src/qanorm/tools/freshness_check.py`.
+685. [ ] Реализовать `FreshnessCheckTool`.
+686. [ ] Создать файл `src/qanorm/tools/document_refresh.py`.
+687. [ ] Реализовать `DocumentRefreshTool`.
+688. [ ] Создать файл `src/qanorm/tools/trusted_search.py`.
+689. [ ] Реализовать `TrustedSearchTool`.
+690. [ ] Создать файл `src/qanorm/tools/open_web_search.py`.
+691. [ ] Реализовать `OpenWebSearchTool`.
+692. [ ] Создать файл `src/qanorm/tools/source_extract.py`.
+693. [ ] Реализовать `SourceExtractTool`.
+694. [ ] Создать файл `src/qanorm/tools/answer_format.py`.
+695. [ ] Реализовать `AnswerFormatTool`.
+696. [ ] Реализовать registry инструментов с проверкой разрешенного scope и записью `tool_invocations`.
+697. [ ] Реализовать unit-тесты на tool registry и базовые adapters инструментов.
+
+### Блок AG. Нормативный retrieval поверх базы Этапа 1
+
+698. [ ] Создать файл `src/qanorm/services/qa/retrieval_service.py`.
+699. [ ] Реализовать FTS-поиск по `document_nodes`.
+700. [ ] Реализовать vector search по `document_nodes`.
+701. [ ] Реализовать фильтрацию retrieval только по активным версиям документов.
+702. [ ] Реализовать metadata-фильтры по типу документа, статусу и дополнительным признакам.
+703. [ ] Реализовать гибридное объединение результатов FTS и vector search.
+704. [ ] Реализовать извлечение локатора узла из `document_nodes`.
+705. [ ] Реализовать извлечение краткой релевантной цитаты из текста узла.
+706. [ ] Реализовать обогащение результата данными документа и редакции.
+707. [ ] Реализовать нормализацию результата retrieval в evidence-объект нормативного типа.
+708. [ ] Реализовать дедупликацию результатов по `document_version_id` и `node_id`.
+709. [ ] Реализовать использование `document_references` для поиска связанных нормативных документов.
+710. [ ] Реализовать включение связанных документов в secondary evidence.
+711. [ ] Реализовать `top-k` и пагинацию retrieval-результатов.
+712. [ ] Реализовать unit-тесты на hybrid retrieval и ranking.
+713. [ ] Реализовать интеграционный тест нормативного retrieval на фикстурах Этапа 1.
+714. [ ] Выполнить smoke-проверку retrieval на наполненной БД Этапа 1.
+
+### Блок AH. Оркестратор и декомпозиция пользовательского запроса
+
+715. [ ] Создать директорию `src/qanorm/agents/orchestrator/`.
+716. [ ] Создать директорию `src/qanorm/agents/planner/`.
+717. [ ] Реализовать модуль `query_analyzer` с загрузкой системного prompt из prompt catalog.
+718. [ ] Реализовать классификацию пользовательского запроса по типу и сложности.
+719. [ ] Реализовать извлечение инженерных аспектов, ограничений и условий из запроса.
+720. [ ] Реализовать модуль `task_decomposer` с загрузкой системного prompt из prompt catalog.
+721. [ ] Реализовать преобразование плана в записи `qa_subtasks`.
+722. [ ] Реализовать правила маршрутизации подзадач в normative retrieval, freshness, trusted web и open web.
+723. [ ] Реализовать основной orchestration loop поверх `QueryState` с использованием внешнего prompt catalog для системных ролей.
+724. [ ] Реализовать запись переходов состояния оркестратора и промежуточных результатов в БД.
+725. [ ] Реализовать детерминированный fallback при невалидном результате планирования модели.
+726. [ ] Реализовать обязательное использование tool registry внутри оркестратора.
+727. [ ] Реализовать базовый streaming progress-событий от оркестратора.
+728. [ ] Реализовать unit-тесты на декомпозицию и routing.
+729. [ ] Реализовать интеграционный тест оркестратора на простом нормативном запросе.
+730. [ ] Реализовать интеграционный тест оркестратора на multi-aspect запросе.
+
+### Блок AI. Синтез ответа и evidence-based формат выдачи
+
+731. [ ] Создать файл `src/qanorm/agents/answer_synthesizer.py` и подключить к нему внешний system prompt template.
+732. [ ] Реализовать группировку evidence по аспектам вопроса и тезисам.
+733. [ ] Реализовать приоритизацию источников `normative > trusted_web > open_web`.
+734. [ ] Реализовать генерацию прямого ответа только на основе подтвержденных evidence-блоков.
+735. [ ] Реализовать раздельную маркировку нормативных и ненормативных утверждений.
+736. [ ] Реализовать форматирование ссылки `документ + редакция + локатор + цитата`.
+737. [ ] Реализовать включение допущений и ограничений в финальный ответ.
+738. [ ] Реализовать пометку неполного покрытия вопроса.
+739. [ ] Реализовать сериализацию финального ответа в API/UI схему.
+740. [ ] Реализовать сохранение структурированного ответа в `qa_answers`.
+741. [ ] Реализовать запись финального ответа как assistant-message в `qa_messages`.
+742. [ ] Реализовать обновление статуса `qa_query` при завершении ответа.
+743. [ ] Реализовать unit-тесты на правила форматирования ответа и snapshot-проверки prompt rendering.
+744. [ ] Выполнить smoke-проверку ответа со смешанными нормативными и внешними evidence.
+745. [ ] Выполнить smoke-проверку ответа с предупреждением о неполном покрытии вопроса.
+
+### Блок AJ. Неблокирующая проверка актуальности и refresh
+
+746. [ ] Создать файл `src/qanorm/services/qa/freshness_service.py`.
+747. [ ] Реализовать правила запуска freshness check.
+748. [ ] Реализовать загрузку локальной активной версии и ее метаданных для проверки.
+749. [ ] Реализовать вызов логики Stage 1 для получения актуальных метаданных документа из источника.
+750. [ ] Реализовать сравнение локальной и удаленной редакции документа.
+751. [ ] Реализовать сравнение статуса и дат актуализации.
+752. [ ] Реализовать нормализацию статусов `fresh`, `stale`, `refresh_in_progress`, `refresh_failed`, `unknown`.
+753. [ ] Реализовать сохранение результата проверки в `freshness_checks`.
+754. [ ] Реализовать background job `freshness_check_job`.
+755. [ ] Реализовать background job `document_refresh_job`.
+756. [ ] Реализовать неблокирующее подключение freshness-ветки к оркестратору.
+757. [ ] Реализовать генерацию warning-блока о stale-версии.
+758. [ ] Реализовать аннотацию ответа локальной и удаленной редакцией документа.
+759. [ ] Реализовать путь обновления ответа и `post_answer_enrichment_job`, если refresh завершился до отправки финального результата или сразу после него.
+760. [ ] Реализовать unit-тесты на freshness decision logic.
+761. [ ] Реализовать интеграционный тест ответа при stale-документе.
+762. [ ] Выполнить smoke-проверку запуска refresh по реальному документу.
+
+### Блок AK. Trusted sources и локальный индекс доверенных источников
+
+763. [ ] Создать файл `configs/trusted_sources.yaml`.
+764. [ ] Реализовать загрузку allowlist trusted domains в настройки приложения.
+765. [ ] Определить конфигурационную модель trusted source adapter.
+766. [ ] Создать файл `src/qanorm/fetchers/trusted_sources.py`.
+767. [ ] Реализовать базовую загрузку страницы trusted source.
+768. [ ] Реализовать discovery trusted source через `sitemap.xml` или эквивалентную карту источника.
+769. [ ] Реализовать сохранение `trusted_source_sync_run`.
+770. [ ] Реализовать сохранение `trusted_source_document`.
+771. [ ] Реализовать chunking текста trusted source документа.
+772. [ ] Реализовать индексацию чанков trusted source для локального поиска.
+773. [ ] Реализовать локальный поиск по индексу trusted sources.
+774. [ ] Реализовать нормализацию результата trusted source в evidence-объект.
+775. [ ] Реализовать background job `trusted_source_sync_job`.
+776. [ ] Реализовать CLI-команду ручной синхронизации trusted sources.
+777. [ ] Реализовать запись вызовов trusted search в `search_events`.
+778. [ ] Реализовать unit-тесты на sync и search trusted sources.
+779. [ ] Выполнить smoke-проверку retrieval по одному allowlist-домену.
+
+### Блок AL. Open web search через self-hosted SearXNG
+
+780. [ ] Добавить в настройки параметры подключения к `SearXNG`.
+781. [ ] Подготовить локальный способ запуска self-hosted `SearXNG`.
+782. [ ] Добавить в `docker-compose.stage2.yml` сервис `SearXNG` и его базовую конфигурацию.
+783. [ ] Создать файл `src/qanorm/providers/searxng.py`.
+784. [ ] Реализовать клиент поиска в `SearXNG`.
+785. [ ] Реализовать безопасный query builder для open web search.
+786. [ ] Реализовать доменные фильтры и ограничение числа результатов.
+787. [ ] Реализовать запись open web поисков в `search_events`.
+788. [ ] Реализовать загрузку содержимого выбранной страницы из search result.
+789. [ ] Реализовать санитарную очистку HTML и извлечение чистого текста.
+790. [ ] Реализовать нормализацию open web результата в evidence-объект.
+791. [ ] Реализовать background job `open_web_research_job`.
+792. [ ] Реализовать open web fallback в оркестраторе при недостаточности нормативного покрытия.
+793. [ ] Реализовать unit-тесты на интеграцию с `SearXNG` и content extraction.
+794. [ ] Выполнить smoke-проверку open web fallback на одном запросе.
+
+### Блок AM. Верификация, безопасность и изоляция сессий
+
+795. [ ] Создать файл `src/qanorm/services/qa/verification_service.py`.
+796. [ ] Создать файл `src/qanorm/security/guards.py`.
+797. [ ] Реализовать `citation_auditor` как гибридный `model-assisted` модуль с кодовыми проверками ссылок и локаторов.
+798. [ ] Реализовать проверку, что каждый существенный тезис привязан к evidence.
+799. [ ] Реализовать `coverage_auditor` как гибридный `model-assisted` модуль проверки полноты покрытия вопроса.
+800. [ ] Реализовать сравнение покрытия ответа с аспектами пользовательского вопроса.
+801. [ ] Реализовать `hallucination_guard` как гибридный `model-assisted` модуль supportedness-проверки утверждений.
+802. [ ] Реализовать отклонение или маркировку неподтвержденных нормативных утверждений.
+803. [ ] Реализовать классификацию verification findings на исправимые и неисправимые.
+804. [ ] Реализовать bounded `repair loop` для исправимых замечаний verification layer.
+805. [ ] Реализовать лимиты `max_verification_retries`, `max_total_attempts`, `max_tool_calls`, `max_time_budget`.
+806. [ ] Реализовать остановку repair loop при неизменном `evidence set`.
+807. [ ] Реализовать остановку repair loop при повторяющемся fingerprint verification findings.
+808. [ ] Реализовать деградацию к честно размеченному ограниченному ответу при неустранимых или повторяющихся замечаниях.
+809. [ ] Реализовать validator корректной маркировки источников `normative`, `trusted_web`, `open_web`.
+810. [ ] Реализовать `safety_guard` для пользовательского ввода.
+811. [ ] Реализовать `safety_guard` для retrieved-контента и web-источников.
+812. [ ] Реализовать sanitation pipeline перед включением внешнего текста в prompt.
+813. [ ] Реализовать tool policy enforcement и лимиты на число вызовов инструментов.
+814. [ ] Реализовать guards изоляции сессий для кэшей, worker-ов и временных артефактов.
+815. [ ] Реализовать сохранение `verification_reports`.
+816. [ ] Реализовать сохранение `security_events`.
+817. [ ] Реализовать стратегию блокировки или предупреждения при security violation.
+818. [ ] Реализовать unit-тесты на verification layer.
+819. [ ] Реализовать интеграционный тест bounded repair loop с исправимым замечанием.
+820. [ ] Реализовать интеграционный тест bounded repair loop с остановкой по отсутствию улучшения.
+821. [ ] Реализовать adversarial-тесты на prompt injection через пользовательский ввод.
+822. [ ] Реализовать adversarial-тесты на prompt injection через retrieved/web-контент и на изоляцию сессий.
+
+### Блок AN. Web UI
+
+823. [ ] Инициализировать проект `Next.js` в директории `web/`.
+824. [ ] Настроить frontend env и `API base URL`.
+825. [ ] Реализовать frontend API client.
+826. [ ] Реализовать базовый layout чат-интерфейса.
+827. [ ] Реализовать создание новой сессии из web UI.
+828. [ ] Реализовать боковую панель со списком сессий.
+829. [ ] Реализовать загрузку истории сообщений при открытии сессии.
+830. [ ] Реализовать ввод сообщения и отправку запроса.
+831. [ ] Реализовать SSE-клиент для streaming ответа.
+832. [ ] Реализовать отображение частичного ответа ассистента.
+833. [ ] Реализовать отображение финального структурированного ответа.
+834. [ ] Реализовать панель sources и evidence.
+835. [ ] Реализовать отображение документа, редакции, локатора и цитаты.
+836. [ ] Реализовать бейджи происхождения источника `normative`, `trusted_web`, `open_web`.
+837. [ ] Реализовать отображение freshness warnings.
+838. [ ] Реализовать отображение неполного покрытия вопроса и ограничений ответа.
+839. [ ] Реализовать состояния loading, error и retry в UI.
+840. [ ] Реализовать smoke-тест основного чатового сценария во frontend.
+841. [ ] Выполнить ручную приемочную проверку web UI против backend.
+
+### Блок AO. Telegram-канал доступа
+
+842. [ ] Добавить настройки Telegram-бота в конфигурацию приложения.
+843. [ ] Создать файл `src/qanorm/integrations/telegram/bot.py`.
+844. [ ] Реализовать bootstrap Telegram-бота.
+845. [ ] Реализовать прием и парсинг входящего сообщения пользователя.
+846. [ ] Реализовать сопоставление Telegram chat с `qa_session`.
+847. [ ] Реализовать команду `/new` для создания новой сессии.
+848. [ ] Реализовать отправку Telegram-запроса в общий query service.
+849. [ ] Реализовать форматирование ответа с учетом ограничений Telegram по длине и разметке.
+850. [ ] Реализовать поэтапную или chunked-отправку ответа и предупреждений в Telegram.
+851. [ ] Реализовать запись Telegram interaction в audit trail.
+852. [ ] Реализовать интеграционный тест Telegram adapter с моками.
+853. [ ] Выполнить ручную приемочную проверку Telegram-канала.
+
+### Блок AP. Наблюдаемость и аудит
+
+854. [ ] Создать файл `src/qanorm/observability/tracing.py`.
+855. [ ] Реализовать correlation IDs для `request_id`, `session_id` и `query_id`.
+856. [ ] Подключить `OpenTelemetry` к `FastAPI`.
+857. [ ] Подключить `OpenTelemetry` к `ARQ` worker-ам.
+858. [ ] Реализовать трассировку provider calls.
+859. [ ] Реализовать трассировку tool calls.
+860. [ ] Реализовать endpoint экспорта `Prometheus` metrics.
+861. [ ] Реализовать метрику `time_to_first_event`.
+862. [ ] Реализовать метрику `time_to_first_token`.
+863. [ ] Реализовать метрику `time_to_final_answer`.
+864. [ ] Реализовать метрики retrieval, freshness и verification.
+865. [ ] Реализовать структурированное JSON-логирование.
+866. [ ] Реализовать поля логов, совместимые с `Loki`.
+867. [ ] Подготовить локальную конфигурацию `Prometheus`.
+868. [ ] Подготовить локальную конфигурацию `Grafana`.
+869. [ ] Подготовить локальную конфигурацию `Loki`.
+870. [ ] Подготовить локальную конфигурацию `Tempo` или `Jaeger`.
+871. [ ] Добавить в `docker-compose.stage2.yml` сервисы `Prometheus`, `Grafana`, `Loki` и `Tempo` или `Jaeger`.
+872. [ ] Реализовать generic writer для `audit_events`.
+873. [ ] Реализовать запись audit-событий: запрос, retrieval, tool calls, freshness, финальный ответ.
+874. [ ] Реализовать запись в audit trail имен и версий использованных prompt templates и model providers.
+875. [ ] Реализовать базовый эксплуатационный dashboard для Этапа 2.
+876. [ ] Выполнить smoke-проверку observability и audit stack.
+
+### Блок AQ. Интеграционные, нагрузочные и приемочные проверки Этапа 2
+
+877. [ ] Реализовать интеграционный тест создания и возобновления `qa_session`.
+878. [ ] Реализовать интеграционный тест сохранения истории сообщений.
+879. [ ] Реализовать интеграционный тест `POST /sessions/{session_id}/queries`.
+880. [ ] Реализовать интеграционный тест SSE streaming contract.
+881. [ ] Реализовать интеграционный тест переключения model provider по конфигурации.
+882. [ ] Реализовать интеграционный тест нормативного retrieval на наполненной БД Этапа 1.
+883. [ ] Реализовать интеграционный тест evidence-based ответа на простой нормативный вопрос.
+884. [ ] Реализовать интеграционный тест декомпозиции сложного multi-aspect вопроса.
+885. [ ] Реализовать интеграционный тест неблокирующей freshness-ветки.
+886. [ ] Реализовать интеграционный тест trusted source fallback.
+887. [ ] Реализовать интеграционный тест open web fallback.
+888. [ ] Реализовать интеграционный тест корректной маркировки внешних ненормативных источников.
+889. [ ] Реализовать интеграционный тест изоляции параллельных web-сессий.
+890. [ ] Реализовать интеграционный тест изоляции web и Telegram сессий.
+891. [ ] Реализовать интеграционный тест защиты от prompt injection во входе пользователя.
+892. [ ] Реализовать интеграционный тест защиты от prompt injection во внешнем web-контенте.
+893. [ ] Реализовать нагрузочный сценарий нескольких одновременных пользовательских сессий.
+894. [ ] Выполнить приемочную проверку web UI на основном пользовательском сценарии.
+895. [ ] Выполнить приемочную проверку Telegram-канала на основном пользовательском сценарии.
+896. [ ] Снять итоговые метрики качества Этапа 2.
+897. [ ] Сформировать итоговый отчет готовности Этапа 2.
+898. [ ] Зафиксировать список известных ограничений MVP Этапа 2.
+899. [ ] Подтвердить готовность Этапа 2 к использованию поверх наполненной базы Этапа 1.
