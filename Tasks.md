@@ -664,41 +664,41 @@
 
 ### Блок AB. Репозитории доступа к данным Этапа 2
 
-541. [ ] Создать файл `src/qanorm/repositories/qa_sessions.py`.
-542. [ ] Реализовать создание записи `qa_session`.
-543. [ ] Реализовать получение `qa_session` по внутреннему `id`.
-544. [ ] Реализовать получение `qa_session` по внешним канальным идентификаторам.
-545. [ ] Реализовать обновление статуса, summary и времени жизни сессии.
-546. [ ] Создать файл `src/qanorm/repositories/qa_messages.py`.
-547. [ ] Реализовать добавление сообщения в историю `qa_messages`.
-548. [ ] Реализовать выборку истории сообщений по `session_id`.
-549. [ ] Создать файл `src/qanorm/repositories/qa_queries.py`.
-550. [ ] Реализовать создание записи `qa_query`.
-551. [ ] Реализовать обновление статуса `qa_query` и флагов использования внешних источников.
-552. [ ] Создать файл `src/qanorm/repositories/qa_subtasks.py`.
-553. [ ] Реализовать сохранение подзадачи в `qa_subtasks`.
-554. [ ] Реализовать выборку дерева подзадач по `query_id`.
-555. [ ] Создать файл `src/qanorm/repositories/qa_evidence.py`.
-556. [ ] Реализовать пакетное сохранение evidence-блоков.
-557. [ ] Реализовать выборку evidence по `query_id` и `subtask_id`.
-558. [ ] Создать файл `src/qanorm/repositories/qa_answers.py`.
-559. [ ] Реализовать сохранение и получение финального ответа.
-560. [ ] Создать файл `src/qanorm/repositories/verification_reports.py`.
-561. [ ] Реализовать сохранение `verification_report`.
-562. [ ] Создать файл `src/qanorm/repositories/tool_invocations.py`.
-563. [ ] Реализовать сохранение вызова инструмента.
-564. [ ] Создать файл `src/qanorm/repositories/freshness_checks.py`.
-565. [ ] Реализовать сохранение и выборку результатов freshness check.
-566. [ ] Создать файл `src/qanorm/repositories/security_events.py`.
-567. [ ] Реализовать сохранение `security_event`.
-568. [ ] Создать файл `src/qanorm/repositories/audit_events.py`.
-569. [ ] Реализовать сохранение `audit_event`.
-570. [ ] Создать файл `src/qanorm/repositories/search_events.py`.
-571. [ ] Реализовать сохранение `search_event`.
-572. [ ] Создать файл `src/qanorm/repositories/trusted_sources.py`.
-573. [ ] Реализовать сохранение документа trusted source.
-574. [ ] Реализовать сохранение чанков trusted source.
-575. [ ] Реализовать сохранение sync run trusted source.
+541. [x] Создать файл `src/qanorm/repositories/qa_sessions.py`.
+542. [x] Реализовать создание записи `qa_session`.
+543. [x] Реализовать получение `qa_session` по внутреннему `id`.
+544. [x] Реализовать получение `qa_session` по внешним канальным идентификаторам.
+545. [x] Реализовать обновление статуса, summary и времени жизни сессии.
+546. [x] Создать файл `src/qanorm/repositories/qa_messages.py`.
+547. [x] Реализовать добавление сообщения в историю `qa_messages`.
+548. [x] Реализовать выборку истории сообщений по `session_id`.
+549. [x] Создать файл `src/qanorm/repositories/qa_queries.py`.
+550. [x] Реализовать создание записи `qa_query`.
+551. [x] Реализовать обновление статуса `qa_query` и флагов использования внешних источников.
+552. [x] Создать файл `src/qanorm/repositories/qa_subtasks.py`.
+553. [x] Реализовать сохранение подзадачи в `qa_subtasks`.
+554. [x] Реализовать выборку дерева подзадач по `query_id`.
+555. [x] Создать файл `src/qanorm/repositories/qa_evidence.py`.
+556. [x] Реализовать пакетное сохранение evidence-блоков.
+557. [x] Реализовать выборку evidence по `query_id` и `subtask_id`.
+558. [x] Создать файл `src/qanorm/repositories/qa_answers.py`.
+559. [x] Реализовать сохранение и получение финального ответа.
+560. [x] Создать файл `src/qanorm/repositories/verification_reports.py`.
+561. [x] Реализовать сохранение `verification_report`.
+562. [x] Создать файл `src/qanorm/repositories/tool_invocations.py`.
+563. [x] Реализовать сохранение вызова инструмента.
+564. [x] Создать файл `src/qanorm/repositories/freshness_checks.py`.
+565. [x] Реализовать сохранение и выборку результатов freshness check.
+566. [x] Создать файл `src/qanorm/repositories/security_events.py`.
+567. [x] Реализовать сохранение `security_event`.
+568. [x] Создать файл `src/qanorm/repositories/audit_events.py`.
+569. [x] Реализовать сохранение `audit_event`.
+570. [x] Создать файл `src/qanorm/repositories/search_events.py`.
+571. [x] Реализовать сохранение `search_event`.
+572. [x] Создать файл `src/qanorm/repositories/trusted_sources.py`.
+573. [x] Реализовать сохранение документа trusted source.
+574. [x] Реализовать сохранение чанков trusted source.
+575. [x] Реализовать сохранение sync run trusted source.
 
 ### Блок AC. Сессионные сервисы и внутреннее состояние Этапа 2
 
