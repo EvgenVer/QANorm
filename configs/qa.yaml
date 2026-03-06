@@ -1,0 +1,29 @@
+qa:
+  session:
+    # Keep conversational memory scoped to the active chat session only.
+    ttl_hours: 24
+    summary_trigger_messages: 12
+    summary_keep_recent_messages: 8
+    max_parallel_queries_per_session: 1
+  providers:
+    # Local defaults keep the Stage 2 scaffold runnable without cloud keys.
+    orchestration:
+      provider: ollama
+      model: qwen2.5:7b-instruct
+    synthesis:
+      provider: ollama
+      model: qwen2.5:14b-instruct
+    embeddings:
+      provider: ollama
+      model: bge-m3
+    prompt_catalog_dir: src/qanorm/prompts/templates
+  web:
+    stream_transport: sse
+    session_cookie_name: qanorm_session_id
+  telegram:
+    enabled: false
+    use_webhook: false
+  search:
+    open_web_provider: searxng
+    open_web_max_results: 5
+    trusted_domains: []

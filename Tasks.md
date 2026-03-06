@@ -583,45 +583,45 @@
 
 ### Блок Z. Подготовка репозитория и базового каркаса Этапа 2
 
-466. [ ] Обновить `README.md` с описанием цели и архитектуры Этапа 2.
-467. [ ] Обновить `.gitignore` для `web/node_modules`, `.next`, кэшей frontend и артефактов локальной инфраструктуры Этапа 2.
-468. [ ] Обновить `.env.example` списком переменных окружения Этапа 2.
-469. [ ] Добавить в `pyproject.toml` backend-зависимости Этапа 2 (`fastapi`, `uvicorn`, `redis`, `arq`, `aiogram`, `sse-starlette` или эквивалент).
-470. [ ] Добавить в `pyproject.toml` dev-зависимости Этапа 2 (`pytest-asyncio`, средства мокирования HTTP и эквивалентные инструменты).
-471. [ ] Создать файл `configs/qa.yaml` с базовыми настройками Этапа 2.
-472. [ ] Расширить `src/qanorm/settings.py` схемой настроек Этапа 2.
-473. [ ] Реализовать загрузку `configs/qa.yaml` в `settings.py`.
-474. [ ] Реализовать валидацию обязательных настроек для `Redis`, model providers, web UI, Telegram и web search.
-475. [ ] Создать директорию `src/qanorm/api/`.
-476. [ ] Создать файл `src/qanorm/api/__init__.py`.
-477. [ ] Создать директорию `src/qanorm/api/routes/`.
-478. [ ] Создать директорию `src/qanorm/agents/`.
-479. [ ] Создать файл `src/qanorm/agents/__init__.py`.
-480. [ ] Создать директорию `src/qanorm/providers/`.
-481. [ ] Создать файл `src/qanorm/providers/__init__.py`.
-482. [ ] Создать директорию `src/qanorm/tools/`.
-483. [ ] Создать файл `src/qanorm/tools/__init__.py`.
-484. [ ] Создать директорию `src/qanorm/security/`.
-485. [ ] Создать директорию `src/qanorm/observability/`.
-486. [ ] Создать директорию `src/qanorm/audit/` и `src/qanorm/prompts/`.
-487. [ ] Создать директорию `src/qanorm/integrations/telegram/` и `src/qanorm/prompts/templates/`.
-488. [ ] Создать директорию `src/qanorm/workers/`.
-489. [ ] Создать директорию `web/`.
-490. [ ] Создать файл `docker-compose.stage2.yml` для локальной инфраструктуры Этапа 2.
-491. [ ] Добавить в `docker-compose.stage2.yml` сервис `Redis` для backend и worker Этапа 2.
-492. [ ] Создать файл `Dockerfile.backend` для общего Python-образа Этапа 2.
-493. [ ] Настроить в `Dockerfile.backend` установку backend-зависимостей и копирование исходников проекта.
-494. [ ] Подготовить в `Dockerfile.backend` общий runtime для `api` и `worker` без дублирования образов.
-495. [ ] Создать файл `Dockerfile.web` для `Next.js` frontend-а.
-496. [ ] Настроить в `Dockerfile.web` установку frontend-зависимостей и сборку web-приложения.
-497. [ ] Добавить в `docker-compose.stage2.yml` сервис `api` на базе `Dockerfile.backend`.
-498. [ ] Добавить в `docker-compose.stage2.yml` сервис `worker` на базе того же backend-образа с отдельной командой запуска.
-499. [ ] Добавить в `docker-compose.stage2.yml` сервис `web` на базе `Dockerfile.web`.
-500. [ ] Добавить в `docker-compose.stage2.yml` профиль `core` для `api`, `worker`, `web` и `Redis`.
-501. [ ] Добавить в `docker-compose.stage2.yml` опциональный профиль `db` с `PostgreSQL` для изолированных прогонов.
-502. [ ] Настроить env wiring и volume mounts для `api`, `worker` и `web`.
-503. [ ] Настроить healthchecks и зависимости по готовности для `api`, `worker` и `web`.
-504. [ ] Выполнить smoke-проверку `docker compose --profile core up` для локального старта Этапа 2.
+466. [x] Обновить `README.md` с описанием цели и архитектуры Этапа 2.
+467. [x] Обновить `.gitignore` для `web/node_modules`, `.next`, кэшей frontend и артефактов локальной инфраструктуры Этапа 2.
+468. [x] Обновить `.env.example` списком переменных окружения Этапа 2.
+469. [x] Добавить в `pyproject.toml` backend-зависимости Этапа 2 (`fastapi`, `uvicorn`, `redis`, `arq`, `aiogram`, `sse-starlette` или эквивалент).
+470. [x] Добавить в `pyproject.toml` dev-зависимости Этапа 2 (`pytest-asyncio`, средства мокирования HTTP и эквивалентные инструменты).
+471. [x] Создать файл `configs/qa.yaml` с базовыми настройками Этапа 2.
+472. [x] Расширить `src/qanorm/settings.py` схемой настроек Этапа 2.
+473. [x] Реализовать загрузку `configs/qa.yaml` в `settings.py`.
+474. [x] Реализовать валидацию обязательных настроек для `Redis`, model providers, web UI, Telegram и web search.
+475. [x] Создать директорию `src/qanorm/api/`.
+476. [x] Создать файл `src/qanorm/api/__init__.py`.
+477. [x] Создать директорию `src/qanorm/api/routes/`.
+478. [x] Создать директорию `src/qanorm/agents/`.
+479. [x] Создать файл `src/qanorm/agents/__init__.py`.
+480. [x] Создать директорию `src/qanorm/providers/`.
+481. [x] Создать файл `src/qanorm/providers/__init__.py`.
+482. [x] Создать директорию `src/qanorm/tools/`.
+483. [x] Создать файл `src/qanorm/tools/__init__.py`.
+484. [x] Создать директорию `src/qanorm/security/`.
+485. [x] Создать директорию `src/qanorm/observability/`.
+486. [x] Создать директорию `src/qanorm/audit/` и `src/qanorm/prompts/`.
+487. [x] Создать директорию `src/qanorm/integrations/telegram/` и `src/qanorm/prompts/templates/`.
+488. [x] Создать директорию `src/qanorm/workers/`.
+489. [x] Создать директорию `web/`.
+490. [x] Создать файл `docker-compose.stage2.yml` для локальной инфраструктуры Этапа 2.
+491. [x] Добавить в `docker-compose.stage2.yml` сервис `Redis` для backend и worker Этапа 2.
+492. [x] Создать файл `Dockerfile.backend` для общего Python-образа Этапа 2.
+493. [x] Настроить в `Dockerfile.backend` установку backend-зависимостей и копирование исходников проекта.
+494. [x] Подготовить в `Dockerfile.backend` общий runtime для `api` и `worker` без дублирования образов.
+495. [x] Создать файл `Dockerfile.web` для `Next.js` frontend-а.
+496. [x] Настроить в `Dockerfile.web` установку frontend-зависимостей и сборку web-приложения.
+497. [x] Добавить в `docker-compose.stage2.yml` сервис `api` на базе `Dockerfile.backend`.
+498. [x] Добавить в `docker-compose.stage2.yml` сервис `worker` на базе того же backend-образа с отдельной командой запуска.
+499. [x] Добавить в `docker-compose.stage2.yml` сервис `web` на базе `Dockerfile.web`.
+500. [x] Добавить в `docker-compose.stage2.yml` профиль `core` для `api`, `worker`, `web` и `Redis`.
+501. [x] Добавить в `docker-compose.stage2.yml` опциональный профиль `db` с `PostgreSQL` для изолированных прогонов.
+502. [x] Настроить env wiring и volume mounts для `api`, `worker` и `web`.
+503. [x] Настроить healthchecks и зависимости по готовности для `api`, `worker` и `web`.
+504. [x] Выполнить smoke-проверку `docker compose --profile core up` для локального старта Этапа 2.
 
 ### Блок AA. Модель данных и миграции Этапа 2
 

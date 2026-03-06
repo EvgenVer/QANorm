@@ -1,0 +1,17 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install the frontend dependencies first to maximize Docker layer reuse.
+COPY web/package.json /app/package.json
+COPY web/next.config.js /app/next.config.js
+COPY web/tsconfig.json /app/tsconfig.json
+COPY web/next-env.d.ts /app/next-env.d.ts
+COPY web/app /app/app
+RUN npm install
+
+# Build the placeholder Next.js application so the core profile can smoke-test it.
+RUN npm run build
+
+EXPOSE 3000
+CMD ["npm", "run", "start"]

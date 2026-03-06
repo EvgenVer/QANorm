@@ -1,0 +1,199 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: qanorm-stage2-redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    profiles: ["core"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: qanorm-stage2-api
+    command:
+      - python
+      - -m
+      - http.server
+      - "8000"
+      - --bind
+      - 0.0.0.0
+    profiles: ["core"]
+    environment:
+      QANORM_APP_ENV: ${QANORM_APP_ENV:-local}
+      QANORM_DB_URL: ${QANORM_DB_URL:-postgresql+psycopg://postgres:postgres@host.docker.internal:5432/qanorm}
+      QANORM_RAW_STORAGE_PATH: /app/data/raw
+      QANORM_LOG_LEVEL: ${QANORM_LOG_LEVEL:-INFO}
+      QANORM_REDIS_URL: ${QANORM_REDIS_URL:-redis://redis:6379/0}
+      QANORM_API_PUBLIC_URL: ${QANORM_API_PUBLIC_URL:-http://localhost:8000}
+      QANORM_WEB_PUBLIC_URL: ${QANORM_WEB_PUBLIC_URL:-http://localhost:3000}
+      QANORM_SEARXNG_BASE_URL: ${QANORM_SEARXNG_BASE_URL:-http://searxng:8080}
+      QANORM_OLLAMA_BASE_URL: ${QANORM_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      QANORM_LMSTUDIO_BASE_URL: ${QANORM_LMSTUDIO_BASE_URL:-http://host.docker.internal:1234/v1}
+      QANORM_VLLM_BASE_URL: ${QANORM_VLLM_BASE_URL:-http://host.docker.internal:8001/v1}
+      QANORM_GEMINI_API_KEY: ${QANORM_GEMINI_API_KEY:-}
+      QANORM_OPENAI_API_KEY: ${QANORM_OPENAI_API_KEY:-}
+      QANORM_ANTHROPIC_API_KEY: ${QANORM_ANTHROPIC_API_KEY:-}
+      QANORM_QWEN_API_KEY: ${QANORM_QWEN_API_KEY:-}
+      QANORM_DEEPSEEK_API_KEY: ${QANORM_DEEPSEEK_API_KEY:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000', timeout=2).read(); print('ok')"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: qanorm-stage2-worker
+    command:
+      - python
+      - -c
+      - "from pathlib import Path; import time; Path('/tmp/qanorm-worker.ready').write_text('ready', encoding='utf-8'); time.sleep(3600)"
+    profiles: ["core"]
+    environment:
+      QANORM_APP_ENV: ${QANORM_APP_ENV:-local}
+      QANORM_DB_URL: ${QANORM_DB_URL:-postgresql+psycopg://postgres:postgres@host.docker.internal:5432/qanorm}
+      QANORM_RAW_STORAGE_PATH: /app/data/raw
+      QANORM_LOG_LEVEL: ${QANORM_LOG_LEVEL:-INFO}
+      QANORM_REDIS_URL: ${QANORM_REDIS_URL:-redis://redis:6379/0}
+      QANORM_API_PUBLIC_URL: ${QANORM_API_PUBLIC_URL:-http://localhost:8000}
+      QANORM_WEB_PUBLIC_URL: ${QANORM_WEB_PUBLIC_URL:-http://localhost:3000}
+      QANORM_SEARXNG_BASE_URL: ${QANORM_SEARXNG_BASE_URL:-http://searxng:8080}
+      QANORM_OLLAMA_BASE_URL: ${QANORM_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      QANORM_LMSTUDIO_BASE_URL: ${QANORM_LMSTUDIO_BASE_URL:-http://host.docker.internal:1234/v1}
+      QANORM_VLLM_BASE_URL: ${QANORM_VLLM_BASE_URL:-http://host.docker.internal:8001/v1}
+      QANORM_GEMINI_API_KEY: ${QANORM_GEMINI_API_KEY:-}
+      QANORM_OPENAI_API_KEY: ${QANORM_OPENAI_API_KEY:-}
+      QANORM_ANTHROPIC_API_KEY: ${QANORM_ANTHROPIC_API_KEY:-}
+      QANORM_QWEN_API_KEY: ${QANORM_QWEN_API_KEY:-}
+      QANORM_DEEPSEEK_API_KEY: ${QANORM_DEEPSEEK_API_KEY:-}
+    volumes:
+      - ./:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from pathlib import Path; raise SystemExit(0 if Path('/tmp/qanorm-worker.ready').exists() else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: qanorm-stage2-web
+    profiles: ["core"]
+    environment:
+      PORT: "3000"
+      QANORM_PUBLIC_API_BASE_URL: ${QANORM_API_PUBLIC_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: qanorm-stage2-postgres
+    profiles: ["db"]
+    environment:
+      POSTGRES_DB: qanorm
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./.docker/postgres-stage2:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d qanorm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: qanorm-stage2-searxng
+    profiles: ["search"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./.searxng:/etc/searxng
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080', timeout=2).read(); print('ok')"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: qanorm-stage2-prometheus
+    profiles: ["obs"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: qanorm-stage2-grafana
+    profiles: ["obs"]
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./.grafana:/var/lib/grafana
+
+  loki:
+    image: grafana/loki:latest
+    container_name: qanorm-stage2-loki
+    profiles: ["obs"]
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./deploy/observability/loki-config.yml:/etc/loki/local-config.yaml:ro
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: qanorm-stage2-tempo
+    profiles: ["obs"]
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+    volumes:
+      - ./deploy/observability/tempo.yml:/etc/tempo.yml:ro
