@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import UserDefinedType
@@ -32,6 +32,17 @@ class DocumentNode(Base):
     """Normalized structural node of a document."""
 
     __tablename__ = "document_nodes"
+    __table_args__ = (
+        Index("ix_document_nodes_document_version_id", "document_version_id"),
+        Index("ix_document_nodes_parent_node_id", "parent_node_id"),
+        Index("ix_document_nodes_text_tsv", "text_tsv", postgresql_using="gin"),
+        Index(
+            "ix_document_nodes_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     document_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("document_versions.id", ondelete="CASCADE"), nullable=False)

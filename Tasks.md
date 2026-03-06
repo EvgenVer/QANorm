@@ -625,42 +625,42 @@
 
 ### Блок AA. Модель данных и миграции Этапа 2
 
-505. [ ] Создать файл `src/qanorm/models/qa_session.py`.
-506. [ ] Зафиксировать SQLAlchemy-модель `qa_sessions`.
-507. [ ] Создать файл `src/qanorm/models/qa_message.py`.
-508. [ ] Зафиксировать SQLAlchemy-модель `qa_messages`.
-509. [ ] Создать файл `src/qanorm/models/qa_query.py`.
-510. [ ] Зафиксировать SQLAlchemy-модель `qa_queries`.
-511. [ ] Создать файл `src/qanorm/models/qa_subtask.py`.
-512. [ ] Зафиксировать SQLAlchemy-модель `qa_subtasks`.
-513. [ ] Создать файл `src/qanorm/models/qa_evidence.py`.
-514. [ ] Зафиксировать SQLAlchemy-модель `qa_evidence`.
-515. [ ] Создать файл `src/qanorm/models/qa_answer.py`.
-516. [ ] Зафиксировать SQLAlchemy-модель `qa_answers`.
-517. [ ] Создать файл `src/qanorm/models/verification_report.py`.
-518. [ ] Зафиксировать SQLAlchemy-модель `verification_reports`.
-519. [ ] Создать файл `src/qanorm/models/tool_invocation.py`.
-520. [ ] Зафиксировать SQLAlchemy-модель `tool_invocations`.
-521. [ ] Создать файл `src/qanorm/models/freshness_check.py`.
-522. [ ] Зафиксировать SQLAlchemy-модель `freshness_checks`.
-523. [ ] Создать файл `src/qanorm/models/security_event.py`.
-524. [ ] Зафиксировать SQLAlchemy-модель `security_events`.
-525. [ ] Создать файл `src/qanorm/models/audit_event.py`.
-526. [ ] Зафиксировать SQLAlchemy-модель `audit_events`.
-527. [ ] Создать файл `src/qanorm/models/search_event.py`.
-528. [ ] Зафиксировать SQLAlchemy-модель `search_events`.
-529. [ ] Создать файл `src/qanorm/models/trusted_source_document.py`.
-530. [ ] Зафиксировать SQLAlchemy-модель `trusted_source_documents`.
-531. [ ] Создать файл `src/qanorm/models/trusted_source_chunk.py`.
-532. [ ] Зафиксировать SQLAlchemy-модель `trusted_source_chunks`.
-533. [ ] Создать файл `src/qanorm/models/trusted_source_sync_run.py`.
-534. [ ] Зафиксировать SQLAlchemy-модель `trusted_source_sync_runs`.
-535. [ ] Экспортировать все новые модели Этапа 2 в `src/qanorm/models/__init__.py`.
-536. [ ] Добавить внешние ключи и ограничения целостности между сущностями Этапа 2.
-537. [ ] Добавить индексы для частых выборок по `session_id`, `query_id`, `status`, `created_at` и ключам поиска.
-538. [ ] Создать Alembic-ревизию для таблиц Этапа 2.
-539. [ ] Проверить применение миграции Этапа 2 на чистой БД.
-540. [ ] Проверить совместимость миграции Этапа 2 с уже наполненной БД Этапа 1.
+505. [x] Создать файл `src/qanorm/models/qa_session.py`.
+506. [x] Зафиксировать SQLAlchemy-модель `qa_sessions`.
+507. [x] Создать файл `src/qanorm/models/qa_message.py`.
+508. [x] Зафиксировать SQLAlchemy-модель `qa_messages`.
+509. [x] Создать файл `src/qanorm/models/qa_query.py`.
+510. [x] Зафиксировать SQLAlchemy-модель `qa_queries`.
+511. [x] Создать файл `src/qanorm/models/qa_subtask.py`.
+512. [x] Зафиксировать SQLAlchemy-модель `qa_subtasks`.
+513. [x] Создать файл `src/qanorm/models/qa_evidence.py`.
+514. [x] Зафиксировать SQLAlchemy-модель `qa_evidence`.
+515. [x] Создать файл `src/qanorm/models/qa_answer.py`.
+516. [x] Зафиксировать SQLAlchemy-модель `qa_answers`.
+517. [x] Создать файл `src/qanorm/models/verification_report.py`.
+518. [x] Зафиксировать SQLAlchemy-модель `verification_reports`.
+519. [x] Создать файл `src/qanorm/models/tool_invocation.py`.
+520. [x] Зафиксировать SQLAlchemy-модель `tool_invocations`.
+521. [x] Создать файл `src/qanorm/models/freshness_check.py`.
+522. [x] Зафиксировать SQLAlchemy-модель `freshness_checks`.
+523. [x] Создать файл `src/qanorm/models/security_event.py`.
+524. [x] Зафиксировать SQLAlchemy-модель `security_events`.
+525. [x] Создать файл `src/qanorm/models/audit_event.py`.
+526. [x] Зафиксировать SQLAlchemy-модель `audit_events`.
+527. [x] Создать файл `src/qanorm/models/search_event.py`.
+528. [x] Зафиксировать SQLAlchemy-модель `search_events`.
+529. [x] Создать файл `src/qanorm/models/trusted_source_document.py`.
+530. [x] Зафиксировать SQLAlchemy-модель `trusted_source_documents`.
+531. [x] Создать файл `src/qanorm/models/trusted_source_chunk.py`.
+532. [x] Зафиксировать SQLAlchemy-модель `trusted_source_chunks`.
+533. [x] Создать файл `src/qanorm/models/trusted_source_sync_run.py`.
+534. [x] Зафиксировать SQLAlchemy-модель `trusted_source_sync_runs`.
+535. [x] Экспортировать все новые модели Этапа 2 в `src/qanorm/models/__init__.py`.
+536. [x] Добавить внешние ключи и ограничения целостности между сущностями Этапа 2.
+537. [x] Добавить индексы для частых выборок по `session_id`, `query_id`, `status`, `created_at` и ключам поиска.
+538. [x] Создать Alembic-ревизию для таблиц Этапа 2.
+539. [x] Проверить применение миграции Этапа 2 на чистой БД.
+540. [x] Проверить совместимость миграции Этапа 2 с уже наполненной БД Этапа 1.
 
 ### Блок AB. Репозитории доступа к данным Этапа 2
 

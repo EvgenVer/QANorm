@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Enum, Integer, Text, func
+from sqlalchemy import DateTime, Enum, Index, Integer, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,6 +18,11 @@ class IngestionJob(Base):
     """Queued ingestion job."""
 
     __tablename__ = "ingestion_jobs"
+    __table_args__ = (
+        Index("ix_ingestion_jobs_status", "status"),
+        Index("ix_ingestion_jobs_job_type", "job_type"),
+        Index("ix_ingestion_jobs_scheduled_at", "scheduled_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     job_type: Mapped[JobType] = mapped_column(

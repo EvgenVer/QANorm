@@ -58,3 +58,144 @@ class JobStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class SessionChannel(StrEnum):
+    """Supported user access channels."""
+
+    WEB = "web"
+    TELEGRAM = "telegram"
+
+
+class SessionStatus(StrEnum):
+    """Lifecycle states for a chat session."""
+
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    CLOSED = "closed"
+
+
+class MessageRole(StrEnum):
+    """Supported message roles stored in session history."""
+
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+    TOOL = "tool"
+
+
+class QueryStatus(StrEnum):
+    """Execution stages for a user query."""
+
+    PENDING = "pending"
+    ANALYZING = "analyzing"
+    RETRIEVING = "retrieving"
+    SYNTHESIZING = "synthesizing"
+    VERIFYING = "verifying"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class SubtaskStatus(StrEnum):
+    """Execution stages for a decomposed subtask."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class EvidenceSourceKind(StrEnum):
+    """Supported evidence source groups."""
+
+    NORMATIVE = "normative"
+    TRUSTED_WEB = "trusted_web"
+    OPEN_WEB = "open_web"
+
+
+class FreshnessStatus(StrEnum):
+    """Observed freshness state for evidence and answers."""
+
+    FRESH = "fresh"
+    STALE = "stale"
+    REFRESH_IN_PROGRESS = "refresh_in_progress"
+    REFRESH_FAILED = "refresh_failed"
+    UNKNOWN = "unknown"
+
+
+class AnswerStatus(StrEnum):
+    """Persistence status for answer records."""
+
+    DRAFT = "draft"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class CoverageStatus(StrEnum):
+    """Coverage evaluation results for an answer."""
+
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    INSUFFICIENT = "insufficient"
+
+
+class VerificationResult(StrEnum):
+    """Possible outcomes for verification checks."""
+
+    PASS = "pass"
+    WARNING = "warning"
+    FAIL = "fail"
+
+
+class ToolInvocationStatus(StrEnum):
+    """Execution status for a tool invocation."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class FreshnessCheckStatus(StrEnum):
+    """Status values for a freshness check run."""
+
+    PENDING = "pending"
+    FRESH = "fresh"
+    STALE = "stale"
+    REFRESH_IN_PROGRESS = "refresh_in_progress"
+    REFRESH_FAILED = "refresh_failed"
+    FAILED = "failed"
+
+
+class SecuritySeverity(StrEnum):
+    """Severity levels for security events."""
+
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
+
+class SearchScope(StrEnum):
+    """Search scopes supported by the orchestration layer."""
+
+    TRUSTED_WEB = "trusted_web"
+    OPEN_WEB = "open_web"
+
+
+class SearchStatus(StrEnum):
+    """Result states for a search provider call."""
+
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class TrustedSourceSyncStatus(StrEnum):
+    """Execution status for a trusted source synchronization run."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"

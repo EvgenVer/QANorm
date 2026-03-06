@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, String, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,6 +17,12 @@ class DocumentVersion(Base):
     """Specific discovered version of a document."""
 
     __tablename__ = "document_versions"
+    __table_args__ = (
+        Index("ix_document_versions_document_id", "document_id"),
+        Index("ix_document_versions_is_active", "is_active"),
+        Index("ix_document_versions_status_normalized", "status_normalized"),
+        Index("ix_document_versions_content_hash", "content_hash"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     document_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
