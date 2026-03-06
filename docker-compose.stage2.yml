@@ -20,20 +20,23 @@ services:
     command:
       - python
       - -m
-      - http.server
-      - "8000"
-      - --bind
+      - uvicorn
+      - qanorm.api.app:create_app
+      - --factory
+      - --host
       - 0.0.0.0
+      - --port
+      - "8000"
     profiles: ["core"]
     environment:
       QANORM_APP_ENV: ${QANORM_APP_ENV:-local}
-      QANORM_DB_URL: ${QANORM_DB_URL:-postgresql+psycopg://postgres:postgres@host.docker.internal:5432/qanorm}
+      QANORM_DB_URL: postgresql+psycopg://postgres:postgres@host.docker.internal:5432/qanorm
       QANORM_RAW_STORAGE_PATH: /app/data/raw
       QANORM_LOG_LEVEL: ${QANORM_LOG_LEVEL:-INFO}
-      QANORM_REDIS_URL: ${QANORM_REDIS_URL:-redis://redis:6379/0}
-      QANORM_API_PUBLIC_URL: ${QANORM_API_PUBLIC_URL:-http://localhost:8000}
-      QANORM_WEB_PUBLIC_URL: ${QANORM_WEB_PUBLIC_URL:-http://localhost:3000}
-      QANORM_SEARXNG_BASE_URL: ${QANORM_SEARXNG_BASE_URL:-http://searxng:8080}
+      QANORM_REDIS_URL: redis://redis:6379/0
+      QANORM_API_PUBLIC_URL: http://localhost:8000
+      QANORM_WEB_PUBLIC_URL: http://localhost:3000
+      QANORM_SEARXNG_BASE_URL: http://searxng:8080
       QANORM_OLLAMA_BASE_URL: ${QANORM_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       QANORM_LMSTUDIO_BASE_URL: ${QANORM_LMSTUDIO_BASE_URL:-http://host.docker.internal:1234/v1}
       QANORM_VLLM_BASE_URL: ${QANORM_VLLM_BASE_URL:-http://host.docker.internal:8001/v1}
@@ -54,7 +57,7 @@ services:
         - CMD
         - python
         - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000', timeout=2).read(); print('ok')"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=2).read(); print('ok')"
       interval: 10s
       timeout: 5s
       retries: 5
@@ -66,18 +69,18 @@ services:
     container_name: qanorm-stage2-worker
     command:
       - python
-      - -c
-      - "from pathlib import Path; import time; Path('/tmp/qanorm-worker.ready').write_text('ready', encoding='utf-8'); time.sleep(3600)"
+      - -m
+      - qanorm.workers.bootstrap
     profiles: ["core"]
     environment:
       QANORM_APP_ENV: ${QANORM_APP_ENV:-local}
-      QANORM_DB_URL: ${QANORM_DB_URL:-postgresql+psycopg://postgres:postgres@host.docker.internal:5432/qanorm}
+      QANORM_DB_URL: postgresql+psycopg://postgres:postgres@host.docker.internal:5432/qanorm
       QANORM_RAW_STORAGE_PATH: /app/data/raw
       QANORM_LOG_LEVEL: ${QANORM_LOG_LEVEL:-INFO}
-      QANORM_REDIS_URL: ${QANORM_REDIS_URL:-redis://redis:6379/0}
-      QANORM_API_PUBLIC_URL: ${QANORM_API_PUBLIC_URL:-http://localhost:8000}
-      QANORM_WEB_PUBLIC_URL: ${QANORM_WEB_PUBLIC_URL:-http://localhost:3000}
-      QANORM_SEARXNG_BASE_URL: ${QANORM_SEARXNG_BASE_URL:-http://searxng:8080}
+      QANORM_REDIS_URL: redis://redis:6379/0
+      QANORM_API_PUBLIC_URL: http://localhost:8000
+      QANORM_WEB_PUBLIC_URL: http://localhost:3000
+      QANORM_SEARXNG_BASE_URL: http://searxng:8080
       QANORM_OLLAMA_BASE_URL: ${QANORM_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       QANORM_LMSTUDIO_BASE_URL: ${QANORM_LMSTUDIO_BASE_URL:-http://host.docker.internal:1234/v1}
       QANORM_VLLM_BASE_URL: ${QANORM_VLLM_BASE_URL:-http://host.docker.internal:8001/v1}
@@ -96,7 +99,7 @@ services:
         - CMD
         - python
         - -c
-        - "from pathlib import Path; raise SystemExit(0 if Path('/tmp/qanorm-worker.ready').exists() else 1)"
+        - "from pathlib import Path; raise SystemExit(0 if Path('/tmp/qanorm-stage2-worker.ready').exists() else 1)"
       interval: 10s
       timeout: 5s
       retries: 5

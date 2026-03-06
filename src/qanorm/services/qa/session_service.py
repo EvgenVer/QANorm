@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -40,6 +41,7 @@ class SessionService:
 
         session_created_at = now or datetime.now(timezone.utc)
         qa_session = QASession(
+            id=uuid4(),
             channel=channel,
             external_user_id=external_user_id,
             external_chat_id=external_chat_id,

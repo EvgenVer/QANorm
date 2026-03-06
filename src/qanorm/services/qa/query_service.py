@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from uuid import UUID
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
@@ -38,6 +39,7 @@ class QueryService:
 
         message = self.message_repository.add(
             QAMessage(
+                id=uuid4(),
                 session_id=session_id,
                 role=MessageRole.USER,
                 content=content,
@@ -46,6 +48,7 @@ class QueryService:
         )
         query = self.query_repository.add(
             QAQuery(
+                id=uuid4(),
                 session_id=session_id,
                 message_id=message.id,
                 query_text=content,

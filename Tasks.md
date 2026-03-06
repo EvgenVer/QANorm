@@ -726,42 +726,42 @@
 
 ### Блок AD. FastAPI runtime, Redis и ARQ
 
-597. [ ] Создать файл `src/qanorm/api/app.py`.
-598. [ ] Реализовать фабрику `FastAPI` приложения.
-599. [ ] Создать файл `src/qanorm/api/dependencies.py`.
-600. [ ] Реализовать dependency provider для DB session.
-601. [ ] Реализовать dependency provider для настроек приложения.
-602. [ ] Создать файл `src/qanorm/api/errors.py`.
-603. [ ] Реализовать единый формат API-ошибок.
-604. [ ] Создать файл `src/qanorm/api/routes/health.py`.
-605. [ ] Реализовать endpoint `GET /health/live`.
-606. [ ] Реализовать endpoint `GET /health/ready`.
-607. [ ] Реализовать readiness-проверку подключения к `PostgreSQL`.
-608. [ ] Реализовать readiness-проверку подключения к `Redis`.
-609. [ ] Реализовать readiness-проверку публикации фоновой задачи в `ARQ`/`Redis`.
-610. [ ] Создать файл `src/qanorm/api/routes/sessions.py`.
-611. [ ] Создать файл `src/qanorm/api/routes/chat.py`.
-612. [ ] Создать Pydantic-схему `CreateSessionRequest`.
-613. [ ] Создать Pydantic-схему `SessionResponse`.
-614. [ ] Создать Pydantic-схему `MessageRequest`.
-615. [ ] Создать Pydantic-схему `MessageResponse`.
-616. [ ] Создать Pydantic-схему `StreamEvent`.
-617. [ ] Реализовать endpoint `POST /sessions`.
-618. [ ] Реализовать endpoint `GET /sessions`.
-619. [ ] Реализовать endpoint `GET /sessions/{session_id}`.
-620. [ ] Реализовать endpoint `GET /sessions/{session_id}/messages`.
-621. [ ] Реализовать endpoint `POST /sessions/{session_id}/queries`.
-622. [ ] Реализовать SSE-endpoint `GET /queries/{query_id}/events`.
-623. [ ] Реализовать фабрику подключения к `Redis`.
-624. [ ] Реализовать настройки и инициализацию `ARQ` для Этапа 2.
-625. [ ] Создать модуль bootstrap worker-а Этапа 2.
-626. [ ] Зарегистрировать базовые типы jobs Этапа 2.
-627. [ ] Реализовать per-session lock в `Redis`.
-628. [ ] Реализовать namespace strategy для `Redis`-ключей по `session_id`.
-629. [ ] Реализовать bridge публикации progress-событий между `ARQ`, `Redis` и SSE.
-630. [ ] Реализовать `cleanup_session_state_job` для очистки истекшего hot state сессий в `Redis`.
-631. [ ] Реализовать `cleanup_expired_sessions_job` для очистки истекших session/message/query-данных и временных артефактов.
-632. [ ] Выполнить smoke-проверку старта API, worker-а и health endpoints.
+597. [x] Создать файл `src/qanorm/api/app.py`.
+598. [x] Реализовать фабрику `FastAPI` приложения.
+599. [x] Создать файл `src/qanorm/api/dependencies.py`.
+600. [x] Реализовать dependency provider для DB session.
+601. [x] Реализовать dependency provider для настроек приложения.
+602. [x] Создать файл `src/qanorm/api/errors.py`.
+603. [x] Реализовать единый формат API-ошибок.
+604. [x] Создать файл `src/qanorm/api/routes/health.py`.
+605. [x] Реализовать endpoint `GET /health/live`.
+606. [x] Реализовать endpoint `GET /health/ready`.
+607. [x] Реализовать readiness-проверку подключения к `PostgreSQL`.
+608. [x] Реализовать readiness-проверку подключения к `Redis`.
+609. [x] Реализовать readiness-проверку публикации фоновой задачи в `ARQ`/`Redis`.
+610. [x] Создать файл `src/qanorm/api/routes/sessions.py`.
+611. [x] Создать файл `src/qanorm/api/routes/chat.py`.
+612. [x] Создать Pydantic-схему `CreateSessionRequest`.
+613. [x] Создать Pydantic-схему `SessionResponse`.
+614. [x] Создать Pydantic-схему `MessageRequest`.
+615. [x] Создать Pydantic-схему `MessageResponse`.
+616. [x] Создать Pydantic-схему `StreamEvent`.
+617. [x] Реализовать endpoint `POST /sessions`.
+618. [x] Реализовать endpoint `GET /sessions`.
+619. [x] Реализовать endpoint `GET /sessions/{session_id}`.
+620. [x] Реализовать endpoint `GET /sessions/{session_id}/messages`.
+621. [x] Реализовать endpoint `POST /sessions/{session_id}/queries`.
+622. [x] Реализовать SSE-endpoint `GET /queries/{query_id}/events`.
+623. [x] Реализовать фабрику подключения к `Redis`.
+624. [x] Реализовать настройки и инициализацию `ARQ` для Этапа 2.
+625. [x] Создать модуль bootstrap worker-а Этапа 2.
+626. [x] Зарегистрировать базовые типы jobs Этапа 2.
+627. [x] Реализовать per-session lock в `Redis`.
+628. [x] Реализовать namespace strategy для `Redis`-ключей по `session_id`.
+629. [x] Реализовать bridge публикации progress-событий между `ARQ`, `Redis` и SSE.
+630. [x] Реализовать `cleanup_session_state_job` для очистки истекшего hot state сессий в `Redis`.
+631. [x] Реализовать `cleanup_expired_sessions_job` для очистки истекших session/message/query-данных и временных артефактов.
+632. [x] Выполнить smoke-проверку старта API, worker-а и health endpoints.
 
 ### Блок AE. Абстракция моделей и provider gateway
 

@@ -1,1 +1,37 @@
 """Background worker entrypoints and job handlers for Stage 2."""
+
+from qanorm.workers.stage2 import (
+    SessionLockError,
+    Stage2WorkerSettings,
+    Stage2ProgressEvent,
+    build_query_events_channel,
+    build_redis_settings,
+    build_session_lock_key,
+    build_session_namespace,
+    cleanup_expired_sessions_job,
+    cleanup_session_state_job,
+    create_arq_pool,
+    create_redis_client,
+    publish_progress_event,
+    qa_noop_job,
+    session_lock,
+)
+from qanorm.workers.bootstrap import run_stage2_worker
+
+__all__ = [
+    "SessionLockError",
+    "Stage2ProgressEvent",
+    "Stage2WorkerSettings",
+    "build_query_events_channel",
+    "build_redis_settings",
+    "build_session_lock_key",
+    "build_session_namespace",
+    "cleanup_expired_sessions_job",
+    "cleanup_session_state_job",
+    "create_arq_pool",
+    "create_redis_client",
+    "publish_progress_event",
+    "qa_noop_job",
+    "run_stage2_worker",
+    "session_lock",
+]
