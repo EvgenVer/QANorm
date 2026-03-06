@@ -702,27 +702,27 @@
 
 ### Блок AC. Сессионные сервисы и внутреннее состояние Этапа 2
 
-576. [ ] Создать файл `src/qanorm/models/qa_state.py`.
-577. [ ] Описать структуру `QueryState`.
-578. [ ] Описать структуру `SubtaskState`.
-579. [ ] Описать внутреннюю структуру `EvidenceBundle` и `PromptRenderContext`.
-580. [ ] Добавить в `QueryState` счетчики `verification_attempt_count`, `repair_attempt_count`, `tool_call_count` и `attempt_deadline`.
-581. [ ] Добавить в `QueryState` fingerprints для `evidence set` и `verification findings`.
-582. [ ] Создать директорию `src/qanorm/services/qa/`.
-583. [ ] Создать файл `src/qanorm/services/qa/__init__.py`.
-584. [ ] Создать файл `src/qanorm/services/qa/session_service.py`.
-585. [ ] Реализовать создание новой пользовательской сессии.
-586. [ ] Реализовать расчет и установку `expires_at` при создании сессии.
-587. [ ] Реализовать возобновление существующей пользовательской сессии.
-588. [ ] Реализовать обновление `session_summary`.
-589. [ ] Реализовать политику retention для истекших сессий, сообщений и связанных query-данных в `PostgreSQL`.
-590. [ ] Создать файл `src/qanorm/services/qa/context_service.py`.
-591. [ ] Реализовать загрузку истории сообщений в контекст запроса.
-592. [ ] Реализовать порог и механизм compaction для `session_summary`.
-593. [ ] Создать файл `src/qanorm/services/qa/query_service.py`.
-594. [ ] Реализовать создание нового query-run из пользовательского сообщения.
-595. [ ] Реализовать привязку пользовательского сообщения к `qa_query` и `qa_session`.
-596. [ ] Реализовать unit-тесты на session, context и query services.
+576. [x] Создать файл `src/qanorm/models/qa_state.py`.
+577. [x] Описать структуру `QueryState`.
+578. [x] Описать структуру `SubtaskState`.
+579. [x] Описать внутреннюю структуру `EvidenceBundle` и `PromptRenderContext`.
+580. [x] Добавить в `QueryState` счетчики `verification_attempt_count`, `repair_attempt_count`, `tool_call_count` и `attempt_deadline`.
+581. [x] Добавить в `QueryState` fingerprints для `evidence set` и `verification findings`.
+582. [x] Создать директорию `src/qanorm/services/qa/`.
+583. [x] Создать файл `src/qanorm/services/qa/__init__.py`.
+584. [x] Создать файл `src/qanorm/services/qa/session_service.py`.
+585. [x] Реализовать создание новой пользовательской сессии.
+586. [x] Реализовать расчет и установку `expires_at` при создании сессии.
+587. [x] Реализовать возобновление существующей пользовательской сессии.
+588. [x] Реализовать обновление `session_summary`.
+589. [x] Реализовать политику retention для истекших сессий, сообщений и связанных query-данных в `PostgreSQL`.
+590. [x] Создать файл `src/qanorm/services/qa/context_service.py`.
+591. [x] Реализовать загрузку истории сообщений в контекст запроса.
+592. [x] Реализовать порог и механизм compaction для `session_summary`.
+593. [x] Создать файл `src/qanorm/services/qa/query_service.py`.
+594. [x] Реализовать создание нового query-run из пользовательского сообщения.
+595. [x] Реализовать привязку пользовательского сообщения к `qa_query` и `qa_session`.
+596. [x] Реализовать unit-тесты на session, context и query services.
 
 ### Блок AD. FastAPI runtime, Redis и ARQ
 
