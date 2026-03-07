@@ -765,39 +765,39 @@
 
 ### Блок AE. Абстракция моделей и provider gateway
 
-633. [ ] Создать файл `src/qanorm/providers/base.py` и файл `src/qanorm/prompts/registry.py`.
-634. [ ] Определить общие типы запросов и результатов для model providers и prompt rendering.
-635. [ ] Определить интерфейс `ChatModelProvider`.
-636. [ ] Определить интерфейс `EmbeddingProvider`.
-637. [ ] Определить интерфейс `RerankerProvider`.
-638. [ ] Определить capability-matrix провайдеров и ролей моделей.
-639. [ ] Реализовать provider registry и prompt registry.
-640. [ ] Реализовать provider factory по конфигурации, загрузчик prompt templates из каталога и регистрацию базовых шаблонов ролей.
-641. [ ] Реализовать выбор версии prompt template по конфигурации и окружению.
-642. [ ] Реализовать включение `prompt_template_name` и `prompt_version` в metadata результата prompt rendering.
-643. [ ] Реализовать общий timeout/retry wrapper для provider-вызовов.
-644. [ ] Создать общий reusable client для compatible transport провайдеров.
-645. [ ] Создать файл `src/qanorm/providers/gemini.py`.
-646. [ ] Реализовать chat-adapter для `Gemini`.
-647. [ ] Реализовать embedding-adapter для `Gemini`.
-648. [ ] Создать файл `src/qanorm/providers/openai.py`.
-649. [ ] Реализовать chat-adapter для `OpenAI`.
-650. [ ] Реализовать embedding-adapter для `OpenAI`.
-651. [ ] Создать файл `src/qanorm/providers/anthropic.py`.
-652. [ ] Реализовать chat-adapter для `Anthropic`.
-653. [ ] Создать файл `src/qanorm/providers/qwen.py`.
-654. [ ] Реализовать отдельный `QwenProvider` с поддержкой shared compatible transport и native API при необходимости.
-655. [ ] Создать файл `src/qanorm/providers/deepseek.py`.
-656. [ ] Реализовать отдельный `DeepSeekProvider` с поддержкой shared compatible transport и native API при необходимости.
-657. [ ] Создать файл `src/qanorm/providers/ollama.py`.
-658. [ ] Реализовать chat-adapter для `Ollama`.
-659. [ ] Реализовать embedding-adapter для `Ollama` либо capability-guard при отсутствии нужной модели.
-660. [ ] Создать файл `src/qanorm/providers/lmstudio.py`.
-661. [ ] Реализовать adapter для `LM Studio` через OpenAI-compatible transport.
-662. [ ] Создать файл `src/qanorm/providers/vllm.py`.
-663. [ ] Реализовать adapter для `vLLM` через OpenAI-compatible transport.
-664. [ ] Реализовать валидацию совместимости выбранных провайдеров с ролями `orchestration`, `synthesis` и `embeddings`.
-665. [ ] Реализовать unit-тесты на provider registry, prompt registry и capability validation.
+633. [x] Создать файл `src/qanorm/providers/base.py` и файл `src/qanorm/prompts/registry.py`.
+634. [x] Определить общие типы запросов и результатов для model providers и prompt rendering.
+635. [x] Определить интерфейс `ChatModelProvider`.
+636. [x] Определить интерфейс `EmbeddingProvider`.
+637. [x] Определить интерфейс `RerankerProvider`.
+638. [x] Определить capability-matrix провайдеров и ролей моделей.
+639. [x] Реализовать provider registry и prompt registry.
+640. [x] Реализовать provider factory по конфигурации, загрузчик prompt templates из каталога и регистрацию базовых шаблонов ролей.
+641. [x] Реализовать выбор версии prompt template по конфигурации и окружению.
+642. [x] Реализовать включение `prompt_template_name` и `prompt_version` в metadata результата prompt rendering.
+643. [x] Реализовать общий timeout/retry wrapper для provider-вызовов.
+644. [x] Создать общий reusable client для compatible transport провайдеров.
+645. [x] Создать файл `src/qanorm/providers/gemini.py`.
+646. [x] Реализовать chat-adapter для `Gemini`.
+647. [x] Реализовать embedding-adapter для `Gemini`.
+648. [x] Создать файл `src/qanorm/providers/openai.py`.
+649. [x] Реализовать chat-adapter для `OpenAI`.
+650. [x] Реализовать embedding-adapter для `OpenAI`.
+651. [x] Создать файл `src/qanorm/providers/anthropic.py`.
+652. [x] Реализовать chat-adapter для `Anthropic`.
+653. [x] Создать файл `src/qanorm/providers/qwen.py`.
+654. [x] Реализовать отдельный `QwenProvider` с поддержкой shared compatible transport и native API при необходимости.
+655. [x] Создать файл `src/qanorm/providers/deepseek.py`.
+656. [x] Реализовать отдельный `DeepSeekProvider` с поддержкой shared compatible transport и native API при необходимости.
+657. [x] Создать файл `src/qanorm/providers/ollama.py`.
+658. [x] Реализовать chat-adapter для `Ollama`.
+659. [x] Реализовать embedding-adapter для `Ollama` либо capability-guard при отсутствии нужной модели.
+660. [x] Создать файл `src/qanorm/providers/lmstudio.py`.
+661. [x] Реализовать adapter для `LM Studio` через OpenAI-compatible transport.
+662. [x] Создать файл `src/qanorm/providers/vllm.py`.
+663. [x] Реализовать adapter для `vLLM` через OpenAI-compatible transport.
+664. [x] Реализовать валидацию совместимости выбранных провайдеров с ролями `orchestration`, `synthesis` и `embeddings`.
+665. [x] Реализовать unit-тесты на provider registry, prompt registry и capability validation.
 
 ### Блок AF. Tool layer и контролируемый доступ к действиям
 

@@ -17,6 +17,8 @@ qa:
       provider: ollama
       model: bge-m3
     prompt_catalog_dir: src/qanorm/prompts/templates
+    prompt_default_version: v1
+    prompt_versions: {}
   web:
     stream_transport: sse
     session_cookie_name: qanorm_session_id

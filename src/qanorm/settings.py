@@ -96,6 +96,8 @@ class ProvidersRuntimeConfig(BaseModel):
     synthesis: ProviderSelection
     embeddings: ProviderSelection
     prompt_catalog_dir: Path
+    prompt_default_version: str = Field(default="v1", min_length=1)
+    prompt_versions: dict[str, str] = Field(default_factory=dict)
 
 
 class WebRuntimeConfig(BaseModel):
