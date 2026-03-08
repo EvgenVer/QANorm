@@ -801,39 +801,39 @@
 
 ### Блок AF. Tool layer и контролируемый доступ к действиям
 
-666. [ ] Создать файл `src/qanorm/prompts/base.py`.
-667. [ ] Определить структуру `prompt template`, `prompt fragment` и `prompt version metadata`.
-668. [ ] Создать базовый system prompt template для `orchestrator`.
-669. [ ] Создать базовый system prompt template для `query_analyzer`.
-670. [ ] Создать базовый system prompt template для `task_decomposer`.
-671. [ ] Создать базовый system prompt template для `answer_synthesizer`.
-672. [ ] Создать базовый system prompt template для `citation_auditor`.
-673. [ ] Создать базовый system prompt template для `coverage_auditor`.
-674. [ ] Создать базовый system prompt template для `hallucination_guard`.
-675. [ ] Создать общие prompt fragments для маркировки источников, freshness warnings и safety policy.
-676. [ ] Реализовать unit-тесты на загрузку и рендеринг prompt templates и fragments.
+666. [x] Создать файл `src/qanorm/prompts/base.py`.
+667. [x] Определить структуру `prompt template`, `prompt fragment` и `prompt version metadata`.
+668. [x] Создать базовый system prompt template для `orchestrator`.
+669. [x] Создать базовый system prompt template для `query_analyzer`.
+670. [x] Создать базовый system prompt template для `task_decomposer`.
+671. [x] Создать базовый system prompt template для `answer_synthesizer`.
+672. [x] Создать базовый system prompt template для `citation_auditor`.
+673. [x] Создать базовый system prompt template для `coverage_auditor`.
+674. [x] Создать базовый system prompt template для `hallucination_guard`.
+675. [x] Создать общие prompt fragments для маркировки источников, freshness warnings и safety policy.
+676. [x] Реализовать unit-тесты на загрузку и рендеринг prompt templates и fragments.
 
-677. [ ] Создать файл `src/qanorm/tools/base.py`.
-678. [ ] Определить базовый интерфейс инструмента и контракт результата.
-679. [ ] Определить metadata инструмента для scope и policy checks.
-680. [ ] Создать файл `src/qanorm/tools/normative_search.py`.
-681. [ ] Реализовать `NormativeSearchTool`.
-682. [ ] Создать файл `src/qanorm/tools/document_fetch.py`.
-683. [ ] Реализовать `DocumentFetchTool`.
-684. [ ] Создать файл `src/qanorm/tools/freshness_check.py`.
-685. [ ] Реализовать `FreshnessCheckTool`.
-686. [ ] Создать файл `src/qanorm/tools/document_refresh.py`.
-687. [ ] Реализовать `DocumentRefreshTool`.
-688. [ ] Создать файл `src/qanorm/tools/trusted_search.py`.
-689. [ ] Реализовать `TrustedSearchTool`.
-690. [ ] Создать файл `src/qanorm/tools/open_web_search.py`.
-691. [ ] Реализовать `OpenWebSearchTool`.
-692. [ ] Создать файл `src/qanorm/tools/source_extract.py`.
-693. [ ] Реализовать `SourceExtractTool`.
-694. [ ] Создать файл `src/qanorm/tools/answer_format.py`.
-695. [ ] Реализовать `AnswerFormatTool`.
-696. [ ] Реализовать registry инструментов с проверкой разрешенного scope и записью `tool_invocations`.
-697. [ ] Реализовать unit-тесты на tool registry и базовые adapters инструментов.
+677. [x] Создать файл `src/qanorm/tools/base.py`.
+678. [x] Определить базовый интерфейс инструмента и контракт результата.
+679. [x] Определить metadata инструмента для scope и policy checks.
+680. [x] Создать файл `src/qanorm/tools/normative_search.py`.
+681. [x] Реализовать `NormativeSearchTool`.
+682. [x] Создать файл `src/qanorm/tools/document_fetch.py`.
+683. [x] Реализовать `DocumentFetchTool`.
+684. [x] Создать файл `src/qanorm/tools/freshness_check.py`.
+685. [x] Реализовать `FreshnessCheckTool`.
+686. [x] Создать файл `src/qanorm/tools/document_refresh.py`.
+687. [x] Реализовать `DocumentRefreshTool`.
+688. [x] Создать файл `src/qanorm/tools/trusted_search.py`.
+689. [x] Реализовать `TrustedSearchTool`.
+690. [x] Создать файл `src/qanorm/tools/open_web_search.py`.
+691. [x] Реализовать `OpenWebSearchTool`.
+692. [x] Создать файл `src/qanorm/tools/source_extract.py`.
+693. [x] Реализовать `SourceExtractTool`.
+694. [x] Создать файл `src/qanorm/tools/answer_format.py`.
+695. [x] Реализовать `AnswerFormatTool`.
+696. [x] Реализовать registry инструментов с проверкой разрешенного scope и записью `tool_invocations`.
+697. [x] Реализовать unit-тесты на tool registry и базовые adapters инструментов.
 
 ### Блок AG. Нормативный retrieval поверх базы Этапа 1
 

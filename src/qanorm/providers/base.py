@@ -11,12 +11,12 @@ from typing import Any, Literal, Protocol, cast
 from httpx import HTTPError, TimeoutException
 from tenacity import AsyncRetrying
 
+from qanorm.prompts.base import LoadedPromptTemplate, PromptRenderResult, PromptTemplateDefinition
 from qanorm.settings import ProviderName, ProviderSelection, QAFileConfig, RuntimeConfig, get_settings
 from qanorm.utils.retry import build_retry_kwargs
 
 
 ModelRole = Literal["orchestration", "synthesis", "embeddings"]
-PromptKind = Literal["role", "fragment"]
 ProviderCapabilityName = Literal["chat", "embeddings", "rerank"]
 
 
@@ -129,36 +129,6 @@ class RerankResponse:
     model: str
     results: list[RerankResult]
     raw_response: dict[str, Any] | None = None
-
-
-@dataclass(slots=True, frozen=True)
-class PromptTemplateDefinition:
-    """Prompt-catalog registration metadata."""
-
-    name: str
-    relative_path: str
-    kind: PromptKind = "role"
-
-
-@dataclass(slots=True, frozen=True)
-class LoadedPromptTemplate:
-    """Resolved prompt template content and selection metadata."""
-
-    name: str
-    version: str
-    environment: str
-    path: str
-    content: str
-
-
-@dataclass(slots=True, frozen=True)
-class PromptRenderResult:
-    """Rendered prompt text plus traceable template metadata."""
-
-    text: str
-    prompt_template_name: str
-    prompt_version: str
-    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True, frozen=True)

@@ -2,22 +2,64 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 from qanorm.models.qa_state import PromptRenderContext
-from qanorm.providers.base import LoadedPromptTemplate, PromptKind, PromptRenderResult, PromptTemplateDefinition
+from qanorm.prompts.base import (
+    LoadedPromptTemplate,
+    PromptKind,
+    PromptRenderResult,
+    PromptTemplateDefinition,
+    PromptVersionMetadata,
+)
 from qanorm.settings import RuntimeConfig, get_settings
 
 
 DEFAULT_PROMPT_DEFINITIONS: tuple[PromptTemplateDefinition, ...] = (
-    PromptTemplateDefinition(name="orchestrator", relative_path="roles/orchestrator", kind="role"),
-    PromptTemplateDefinition(name="query_analyzer", relative_path="roles/query_analyzer", kind="role"),
-    PromptTemplateDefinition(name="task_decomposer", relative_path="roles/task_decomposer", kind="role"),
-    PromptTemplateDefinition(name="answer_synthesizer", relative_path="roles/answer_synthesizer", kind="role"),
-    PromptTemplateDefinition(name="citation_auditor", relative_path="roles/citation_auditor", kind="role"),
-    PromptTemplateDefinition(name="coverage_auditor", relative_path="roles/coverage_auditor", kind="role"),
-    PromptTemplateDefinition(name="hallucination_guard", relative_path="roles/hallucination_guard", kind="role"),
+    PromptTemplateDefinition(
+        name="orchestrator",
+        relative_path="roles/orchestrator",
+        kind="role",
+        default_fragments=("source_policy", "freshness_warning", "safety_policy"),
+    ),
+    PromptTemplateDefinition(
+        name="query_analyzer",
+        relative_path="roles/query_analyzer",
+        kind="role",
+        default_fragments=("source_policy", "safety_policy"),
+    ),
+    PromptTemplateDefinition(
+        name="task_decomposer",
+        relative_path="roles/task_decomposer",
+        kind="role",
+        default_fragments=("source_policy", "safety_policy"),
+    ),
+    PromptTemplateDefinition(
+        name="answer_synthesizer",
+        relative_path="roles/answer_synthesizer",
+        kind="role",
+        default_fragments=("source_policy", "freshness_warning", "safety_policy"),
+    ),
+    PromptTemplateDefinition(
+        name="citation_auditor",
+        relative_path="roles/citation_auditor",
+        kind="role",
+        default_fragments=("source_policy", "freshness_warning", "safety_policy"),
+    ),
+    PromptTemplateDefinition(
+        name="coverage_auditor",
+        relative_path="roles/coverage_auditor",
+        kind="role",
+        default_fragments=("source_policy", "freshness_warning", "safety_policy"),
+    ),
+    PromptTemplateDefinition(
+        name="hallucination_guard",
+        relative_path="roles/hallucination_guard",
+        kind="role",
+        default_fragments=("source_policy", "freshness_warning", "safety_policy"),
+    ),
     PromptTemplateDefinition(name="source_policy", relative_path="fragments/source_policy", kind="fragment"),
     PromptTemplateDefinition(name="freshness_warning", relative_path="fragments/freshness_warning", kind="fragment"),
     PromptTemplateDefinition(name="safety_policy", relative_path="fragments/safety_policy", kind="fragment"),
@@ -73,12 +115,18 @@ class PromptRegistry:
         selected_version = self.resolve_version(name, version=version)
         for candidate in self._build_candidates(definition, selected_version):
             if candidate.exists():
+                fragments = self._load_fragments(definition, selected_version)
                 return LoadedPromptTemplate(
                     name=name,
-                    version=selected_version,
-                    environment=self.environment,
-                    path=str(candidate),
                     content=candidate.read_text(encoding="utf-8"),
+                    metadata=PromptVersionMetadata(
+                        name=name,
+                        kind=definition.kind,
+                        version=selected_version,
+                        environment=self.environment,
+                        path=str(candidate),
+                    ),
+                    fragments=fragments,
                 )
 
         raise PromptTemplateNotFoundError(
@@ -97,6 +145,8 @@ class PromptRegistry:
 
         template = self.load_template(name, version=version)
         render_variables = self._build_render_variables(context)
+        # Fragments are rendered first so role templates can reference them as ordinary variables.
+        render_variables.update(self._build_fragment_variables(template, context))
         if extra_variables:
             render_variables.update(extra_variables)
         text = template.content.format_map(render_variables)
@@ -105,6 +155,8 @@ class PromptRegistry:
             "prompt_version": template.version,
             "prompt_environment": template.environment,
             "prompt_path": template.path,
+            "prompt_kind": template.metadata.kind,
+            "prompt_fragments": [fragment.name for fragment in template.fragments],
         }
         return PromptRenderResult(
             text=text,
@@ -120,6 +172,23 @@ class PromptRegistry:
             return dict(self._definitions)
         return {name: definition for name, definition in self._definitions.items() if definition.kind == kind}
 
+    def _load_fragments(
+        self,
+        definition: PromptTemplateDefinition,
+        selected_version: str,
+    ) -> tuple[LoadedPromptTemplate, ...]:
+        """Resolve declared shared fragments for one role template."""
+
+        loaded: list[LoadedPromptTemplate] = []
+        for fragment_name in definition.default_fragments:
+            fragment_definition = self._definitions.get(fragment_name)
+            if fragment_definition is None:
+                raise PromptTemplateNotFoundError(
+                    f"Prompt fragment '{fragment_name}' is not registered for template '{definition.name}'."
+                )
+            loaded.append(self.load_template(fragment_name, version=selected_version))
+        return tuple(loaded)
+
     def _build_candidates(self, definition: PromptTemplateDefinition, selected_version: str) -> list[Path]:
         """Build search candidates using both environment-specific and common directories."""
 
@@ -129,6 +198,20 @@ class PromptRegistry:
             self.catalog_dir / "common" / f"{definition.relative_path}.{selected_version}.md",
             self.catalog_dir / "common" / f"{definition.relative_path}.md",
         ]
+
+    def _build_fragment_variables(
+        self,
+        template: LoadedPromptTemplate,
+        context: PromptRenderContext,
+    ) -> dict[str, Any]:
+        """Render fragment templates into variables consumable by role templates."""
+
+        render_variables = self._build_render_variables(context)
+        fragment_variables: dict[str, Any] = {}
+        for fragment in template.fragments:
+            variable_name = f"{fragment.name}_text"
+            fragment_variables[variable_name] = fragment.content.format_map(render_variables)
+        return fragment_variables
 
     def _build_render_variables(self, context: PromptRenderContext) -> dict[str, Any]:
         """Flatten the runtime prompt context into format-ready strings."""
@@ -147,7 +230,7 @@ class PromptRegistry:
             "trusted_web_evidence_text": self._render_evidence_list(evidence_bundle.trusted_web),
             "open_web_evidence_text": self._render_evidence_list(evidence_bundle.open_web),
             "stale_warning_text": "\n".join(context.stale_warning_messages),
-            "prompt_context_json": str(
+            "prompt_context_json": json.dumps(
                 {
                     "session_id": str(context.session_id),
                     "query_id": str(context.query_id) if context.query_id else None,
@@ -158,7 +241,9 @@ class PromptRegistry:
                     "trusted_web_evidence_count": len(evidence_bundle.trusted_web),
                     "open_web_evidence_count": len(evidence_bundle.open_web),
                     "stale_warning_count": len(context.stale_warning_messages),
-                }
+                },
+                ensure_ascii=False,
+                sort_keys=True,
             ),
         }
 

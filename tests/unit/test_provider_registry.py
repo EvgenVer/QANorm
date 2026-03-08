@@ -126,8 +126,15 @@ def test_prompt_registry_resolves_environment_specific_version(tmp_path: Path) -
 def test_prompt_registry_falls_back_to_common_template(tmp_path: Path) -> None:
     catalog_dir = tmp_path / "prompts"
     template_path = catalog_dir / "common" / "roles" / "answer_synthesizer.v1.md"
+    source_policy_path = catalog_dir / "common" / "fragments" / "source_policy.v1.md"
+    freshness_warning_path = catalog_dir / "common" / "fragments" / "freshness_warning.v1.md"
+    safety_policy_path = catalog_dir / "common" / "fragments" / "safety_policy.v1.md"
     template_path.parent.mkdir(parents=True, exist_ok=True)
+    source_policy_path.parent.mkdir(parents=True, exist_ok=True)
     template_path.write_text("Messages:\n{recent_messages_text}", encoding="utf-8")
+    source_policy_path.write_text("SOURCE", encoding="utf-8")
+    freshness_warning_path.write_text("FRESHNESS", encoding="utf-8")
+    safety_policy_path.write_text("SAFETY", encoding="utf-8")
 
     runtime_config = _runtime_config(prompt_dir=catalog_dir)
     registry = create_prompt_registry(runtime_config)
