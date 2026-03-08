@@ -31,7 +31,7 @@
 - строит поисковые индексы для последующего RAG;
 - обновляет устаревшие версии документов.
 
-Результат этапа: локальная база нормативных документов, пригодная для retrieval на уровне пунктов и подпунктов.
+Результат этапа: локальная база нормативных документов со структурой на уровне пунктов и подпунктов, пригодная как канонический слой для последующего chunk-based retrieval.
 
 ---
 
@@ -985,8 +985,14 @@ Q&ANorm/
 #### 10.3.2. Хранение и retrieval
 
 - Основная БД: `PostgreSQL 16`
-- Векторный поиск: `pgvector`
 - Полнотекстовый поиск: `PostgreSQL Full Text Search`
+- Векторный поиск: `pgvector` поверх `chunk_embeddings`
+- Канонический структурный слой нормативной базы: `document_nodes`
+- Search-оптимизированный retrieval-слой: `retrieval_chunks`
+- Dense retrieval-слой: `chunk_embeddings`, создаваемые только для active retrieval-chunks
+- Дедупликация dense-слоя: по `chunk_hash` с переиспользованием embeddings для идентичных текстовых блоков
+- Целевое dense-покрытие должно строиться для всех active документов нормативного корпуса, а не для отдельного подмножества типов документов
+- Перед массовой генерацией embeddings обязателен dry-run estimate количества active chunks, объема токенов, ожидаемого размера хранения и ориентировочной стоимости
 - Основной источник нормативных данных: БД и raw storage, созданные на Этапе 1
 
 #### 10.3.3. Web UI и каналы доступа
@@ -1050,7 +1056,12 @@ Q&ANorm/
 - Провайдеры моделей, поиска и внешних интеграций должны быть инкапсулированы за абстрактными интерфейсами.
 - `PostgreSQL` используется как canonical store для сессий, запросов, ответов, evidence и аудита.
 - `Redis` используется как hot state layer для progress, locks, streaming coordination, TTL-кэша и фоновых задач.
-- Retrieval должен быть гибридным: `FTS + vector + metadata filters + document/version constraints`.
+- `document_nodes` должны оставаться каноническим структурным слоем для локаторов, иерархии и точного цитирования.
+- Retrieval должен быть гибридным: `FTS + vector + metadata filters + document/version constraints`, но выполняться по `retrieval_chunks`, а не напрямую по каждому `document_node`.
+- Dense retrieval не должен быть обязательным для каждого запроса: для точных запросов по коду, локатору или редакции допустим режим `FTS + metadata + exact-match` без векторного поиска.
+- `chunk_embeddings` должны создаваться только для active retrieval-chunks и дедуплицироваться по `chunk_hash`.
+- После завершения backfill dense retrieval должен покрывать весь active нормативный корпус, а fallback на `FTS + metadata + exact-match` должен оставаться только как оптимизация для точных запросов или временный режим до завершения backfill.
+- Перед массовой генерацией embeddings должна выполняться отдельная dry-run оценка количества chunks, токенов, ожидаемого размера хранения и стоимости.
 - Проверка актуальности, refresh документов, trusted source sync и open web research должны выполняться в фоновых задачах и не блокировать основную обработку запроса.
 - Все вызовы внешних источников и инструментов должны проходить через единый policy-controlled слой с логированием и аудитом.
 - Системные промпты агентов не должны хардкодиться внутри агентных модулей. Они должны храниться в отдельном prompt catalog, версионироваться в репозитории и подгружаться через отдельный слой рендеринга prompt templates.
@@ -1128,6 +1139,12 @@ Q&ANorm/
 - `safety_guard`
 
 Практически они должны быть оформлены как отдельные модули внутри `src/qanorm/agents/`, но пользоваться общими типами состояния, policy layer и provider interfaces.
+
+Дополнительное правило для `normative_retriever`:
+
+- `normative_retriever` должен искать по `retrieval_chunks`, а не напрямую по каждому `document_node`;
+- после поиска `normative_retriever` должен восстанавливать точные локаторы, цитаты и границы фрагмента через `document_nodes`;
+- dense retrieval должен поддерживать временный режим частичного покрытия корпуса на этапе backfill, но целевая конфигурация обязана покрывать весь active нормативный корпус.
 
 Дополнительное правило для verification-модулей:
 
@@ -1275,14 +1292,18 @@ Q&ANorm/
 
 Должно быть реализовано:
 
-- поиск по `documents`, `document_versions`, `document_nodes` и связанным таблицам Stage 1;
-- гибридный retrieval `FTS + vector + metadata filters`;
-- фильтрация по активной версии документа;
-- сбор evidence-объекта с документом, редакцией, локатором, цитатой и freshness status.
+- dry-run estimate по active нормативному корпусу: количество документов, ожидаемое число `retrieval_chunks`, примерный объем токенов, ожидаемый размер хранения и ориентировочная стоимость embeddings;
+- построение `retrieval_chunks` поверх `document_nodes` с детерминированным chunking по логически связанным нормативным блокам и с минимизацией overlap;
+- поиск по `documents`, `document_versions`, `retrieval_chunks` и связанным таблицам Stage 1/Stage 2;
+- гибридный retrieval `FTS + vector + metadata filters` поверх `retrieval_chunks`;
+- фильтрация по active версии документа;
+- генерация реальных embeddings только для active retrieval-chunks, без дублирования идентичных текстовых блоков по `chunk_hash`;
+- генерация реальных embeddings для всех active документов нормативного корпуса после dry-run estimate стоимости и объема;
+- восстановление точного evidence-объекта через `document_nodes` с документом, редакцией, `chunk_id`, локатором, локатором конца, цитатой и freshness status.
 
 Результат шага:
 
-- система возвращает релевантные нормативные evidence-блоки для пользовательского запроса.
+- система возвращает релевантные нормативные evidence-блоки через search-оптимизированные chunks и восстанавливает точные нормативные локаторы для пользовательского запроса.
 
 #### Шаг 5. Оркестратор и декомпозиция запроса
 
@@ -1420,7 +1441,49 @@ Q&ANorm/
 
 ### 10.7. Модель данных Этапа 2
 
-#### 10.7.1. `qa_sessions`
+#### 10.7.1. `retrieval_chunks`
+
+Назначение:
+
+- search-оптимизированный слой поверх `document_nodes`, предназначенный для полнотекстового и гибридного retrieval.
+
+Минимальные поля:
+
+- `id`
+- `document_id`
+- `document_version_id`
+- `document_type`
+- `chunk_hash`
+- `chunk_type`
+- `heading_path`
+- `start_node_id`
+- `end_node_id`
+- `locator`
+- `locator_end`
+- `chunk_text`
+- `chunk_text_tsv`
+- `token_count`
+- `is_active`
+- `created_at`
+
+#### 10.7.2. `chunk_embeddings`
+
+Назначение:
+
+- хранение dense embeddings для active retrieval-chunks с возможностью переиндексации при смене embedding-модели.
+
+Минимальные поля:
+
+- `id`
+- `chunk_id`
+- `model_key`
+- `model_version`
+- `dimensions`
+- `embedding`
+- `is_active`
+- `created_at`
+
+#### 10.7.3. `qa_sessions`
 
 Назначение:
 
@@ -1438,7 +1501,7 @@ Q&ANorm/
 - `updated_at`
 - `expires_at`
 
-#### 10.7.2. `qa_messages`
+#### 10.7.4. `qa_messages`
 
 Назначение:
 
@@ -1453,7 +1516,7 @@ Q&ANorm/
 - `metadata_json`
 - `created_at`
 
-#### 10.7.3. `qa_queries`
+#### 10.7.5. `qa_queries`
 
 Назначение:
 
@@ -1473,7 +1536,7 @@ Q&ANorm/
 - `created_at`
 - `finished_at`
 
-#### 10.7.4. `qa_subtasks`
+#### 10.7.6. `qa_subtasks`
 
 Назначение:
 
@@ -1492,7 +1555,7 @@ Q&ANorm/
 - `created_at`
 - `finished_at`
 
-#### 10.7.5. `qa_evidence`
+#### 10.7.7. `qa_evidence`
 
 Назначение:
 
@@ -1506,11 +1569,16 @@ Q&ANorm/
 - `source_kind` (`normative`, `trusted_web`, `open_web`)
 - `document_id`
 - `document_version_id`
+- `chunk_id`
 - `node_id`
+- `start_node_id`
+- `end_node_id`
 - `source_url`
 - `source_domain`
 - `edition_label`
 - `locator`
+- `locator_end`
+- `chunk_text`
 - `quote`
 - `relevance_score`
 - `freshness_status`
@@ -1518,7 +1586,7 @@ Q&ANorm/
 - `requires_verification`
 - `created_at`
 
-#### 10.7.6. `qa_answers`
+#### 10.7.8. `qa_answers`
 
 Назначение:
 
@@ -1537,7 +1605,7 @@ Q&ANorm/
 - `model_name`
 - `created_at`
 
-#### 10.7.7. `verification_reports`
+#### 10.7.9. `verification_reports`
 
 Назначение:
 
@@ -1554,7 +1622,7 @@ Q&ANorm/
 - `warnings_json`
 - `created_at`
 
-#### 10.7.8. `tool_invocations`
+#### 10.7.10. `tool_invocations`
 
 Назначение:
 
@@ -1573,7 +1641,7 @@ Q&ANorm/
 - `result_summary`
 - `created_at`
 
-#### 10.7.9. `freshness_checks`
+#### 10.7.11. `freshness_checks`
 
 Назначение:
 
@@ -1592,7 +1660,7 @@ Q&ANorm/
 - `details_json`
 - `created_at`
 
-#### 10.7.10. `security_events`
+#### 10.7.12. `security_events`
 
 Назначение:
 
@@ -1623,6 +1691,10 @@ Q&ANorm/
 
 - доля запросов, для которых нормативный retriever возвращает релевантный evidence в `top-k`;
 - среднее число нормативных evidence-блоков на ответ;
+- число active `retrieval_chunks` во всем нормативном корпусе;
+- доля active `retrieval_chunks`, покрытых embeddings;
+- средняя и медианная длина retrieval-chunk в токенах;
+- отклонение фактического числа chunks, объема хранения и стоимости embeddings от dry-run estimate;
 - доля ответов, использующих только Stage 1 без внешних источников;
 - доля запросов, ушедших в trusted web;
 - доля запросов, ушедших в open web.
@@ -1679,7 +1751,10 @@ Q&ANorm/
 - реализовано контейнеризированное локальное развертывание через `docker-compose.stage2.yml` для `api`, `worker`, `web` и инфраструктурных профилей;
 - реализованы минимальные таблицы и миграции Этапа 2;
 - оркестратор принимает пользовательский запрос и декомпозирует его на подзадачи;
-- нормативный retrieval работает поверх базы Этапа 1 и возвращает evidence на уровне пунктов и подпунктов;
+- выполнен dry-run estimate количества active retrieval-chunks, объема токенов, ожидаемого размера хранения и ориентировочной стоимости embeddings перед массовой генерацией dense-слоя;
+- нормативный retrieval работает поверх `retrieval_chunks`, а точные локаторы и цитаты восстанавливаются через `document_nodes`;
+- embeddings создаются только для active retrieval-chunks и дедуплицируются по `chunk_hash`;
+- dense retrieval после завершения backfill покрывает весь active нормативный корпус, при этом `FTS + metadata + exact-match` остается доступным как оптимизированный путь для точных запросов;
 - ответ формируется только из evidence-блоков и содержит ссылки на документ, редакцию, локатор и цитату;
 - freshness check выполняется параллельно с подготовкой ответа и не блокирует выдачу;
 - при stale-версии система корректно предупреждает пользователя и инициирует refresh;

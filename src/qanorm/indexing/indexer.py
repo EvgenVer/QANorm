@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from qanorm.db.session import session_scope
 from qanorm.db.types import ProcessingStatus
-from qanorm.indexing.embeddings import search_nodes_by_vector_similarity, update_nodes_embeddings
+from qanorm.indexing.embeddings import search_nodes_by_vector_similarity
 from qanorm.indexing.fts import search_nodes_by_fts, update_nodes_full_text_index
 from qanorm.models import DocumentNode
 from qanorm.normalizers.codes import normalize_document_code
@@ -75,7 +75,7 @@ def index_document_version(
 
     indexed_nodes = node_repository.list_for_document_version(version.id)
     update_nodes_full_text_index(indexed_nodes)
-    update_nodes_embeddings(indexed_nodes)
+    _clear_node_embeddings(indexed_nodes)
 
     cleared_node_count = 0
     for candidate_version in version_repository.list_for_document(document.id):
@@ -198,3 +198,12 @@ def _clear_version_index(nodes: list[DocumentNode]) -> int:
         node.text_tsv = None
         node.embedding = None
     return len(nodes)
+
+
+def _clear_node_embeddings(nodes: list[DocumentNode]) -> None:
+    """Drop transitional node-level embeddings after refreshing the text index."""
+
+    # Stage 2 retrieval moves dense vectors to chunk-level storage, so node-level
+    # placeholder embeddings must not be materialized again during reindex.
+    for node in nodes:
+        node.embedding = None

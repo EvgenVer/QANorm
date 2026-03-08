@@ -88,7 +88,12 @@ def test_index_document_version_indexes_only_active_version_and_clears_stale_nod
     active_version = DocumentVersion(id=active_version_id, document_id=document_id, is_active=True)
     old_version = DocumentVersion(id=old_version_id, document_id=document_id, is_active=False)
     active_nodes = [
-        DocumentNode(document_version_id=active_version_id, node_type="point", text="Concrete load calculation", order_index=1),
+        DocumentNode(
+            document_version_id=active_version_id,
+            node_type="point",
+            text="Concrete load calculation",
+            order_index=1,
+        ),
         DocumentNode(document_version_id=active_version_id, node_type="point", text="Wind load rule", order_index=2),
     ]
     stale_node = DocumentNode(
@@ -97,8 +102,8 @@ def test_index_document_version_indexes_only_active_version_and_clears_stale_nod
         text="Old text",
         order_index=1,
         text_tsv="old text",
-        embedding=[0.5, 0.5],
     )
+    stale_node.embedding = [0.5, 0.5]
 
     session = _mock_session()
     session.get.side_effect = [active_version, document]
@@ -117,7 +122,7 @@ def test_index_document_version_indexes_only_active_version_and_clears_stale_nod
     assert result.cleared_node_count == 1
     assert active_version.processing_status is ProcessingStatus.INDEXED
     assert all(node.text_tsv for node in active_nodes)
-    assert all(node.embedding for node in active_nodes)
+    assert all(node.embedding is None for node in active_nodes)
     assert stale_node.text_tsv is None
     assert stale_node.embedding is None
     session.flush.assert_called_once()
@@ -143,9 +148,9 @@ def test_index_document_version_skips_non_current_inactive_version() -> None:
             text="Legacy indexed text",
             order_index=1,
             text_tsv="legacy indexed text",
-            embedding=[0.1, 0.2],
         )
     ]
+    stale_nodes[0].embedding = [0.1, 0.2]
 
     session = _mock_session()
     session.get.side_effect = [inactive_version, document]

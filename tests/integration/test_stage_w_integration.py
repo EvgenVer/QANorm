@@ -382,10 +382,10 @@ def test_397_integration_indexes_active_version() -> None:
                 text="Stale node",
                 order_index=1,
                 text_tsv="old",
-                embedding=[0.1, 0.2],
             ),
         ]
     )
+    session.store.nodes[1].embedding = [0.1, 0.2]
 
     with patched_in_memory_repositories(session):
         result = index_document_version(session, document_version_id=active_version.id)
