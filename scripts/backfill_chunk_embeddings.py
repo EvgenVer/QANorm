@@ -30,6 +30,12 @@ def parse_args() -> argparse.Namespace:
         default=25,
         help="Maximum embedding batches to generate in one outer loop iteration.",
     )
+    parser.add_argument(
+        "--request-timeout-seconds",
+        type=int,
+        default=None,
+        help="Override provider request timeout for this backfill run only.",
+    )
     return parser.parse_args()
 
 
@@ -55,7 +61,18 @@ def main() -> None:
     """Run the resumable backfill until no missing embeddings remain."""
 
     args = parse_args()
-    engine = create_engine(get_settings().env.db_url)
+    runtime_config = get_settings()
+    if args.request_timeout_seconds is not None:
+        # Keep the timeout override scoped to this backfill process instead of
+        # mutating the shared application config for every other runtime path.
+        runtime_config = runtime_config.model_copy(
+            update={
+                "app": runtime_config.app.model_copy(
+                    update={"request_timeout_seconds": args.request_timeout_seconds}
+                )
+            }
+        )
+    engine = create_engine(runtime_config.env.db_url)
 
     with Session(engine) as session:
         total_unique_hashes = count_unique_hashes(session)
@@ -68,6 +85,7 @@ def main() -> None:
             result = asyncio.run(
                 backfill_chunk_embeddings(
                     session,
+                    runtime_config=runtime_config,
                     batch_size=args.batch_size,
                     checkpoint_every_batches=args.checkpoint_every_batches,
                     max_generation_batches=args.generation_batches_per_run,
