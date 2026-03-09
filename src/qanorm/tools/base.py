@@ -12,8 +12,10 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from qanorm.audit import AuditWriter
 from qanorm.db.types import ToolInvocationStatus
 from qanorm.models import ToolInvocation
+from qanorm.observability import increment_event, record_tool_trace
 from qanorm.repositories import ToolInvocationRepository
 
 
@@ -142,6 +144,21 @@ class ToolRegistry:
         payload_dict = payload or {}
         invocation = self._create_invocation(tool=tool, context=context, payload=payload_dict)
         started_at = perf_counter()
+        audit_writer = AuditWriter(context.session)
+        audit_session_id = context.metadata.get("session_id")
+        if isinstance(audit_session_id, str):
+            try:
+                audit_session_id = UUID(audit_session_id)
+            except ValueError:
+                audit_session_id = None
+        audit_writer.write(
+            session_id=audit_session_id,
+            query_id=context.query_id,
+            subtask_id=context.subtask_id,
+            event_type="tool_invocation_started",
+            actor_kind="tool_registry",
+            payload_json={"tool_name": tool.definition.name, "tool_scope": tool.definition.scope},
+        )
         try:
             result = await tool.execute(context, payload_dict)
         except Exception as exc:
@@ -149,12 +166,42 @@ class ToolRegistry:
             invocation.duration_ms = self._duration_ms(started_at)
             invocation.result_summary = str(exc)[:1000]
             context.session.flush()
+            record_tool_trace(
+                tool_name=tool.definition.name,
+                scope=tool.definition.scope,
+                duration_seconds=invocation.duration_ms / 1000,
+                status="failed",
+            )
+            increment_event("tool_invocation", status="failed")
+            audit_writer.write(
+                session_id=audit_session_id,
+                query_id=context.query_id,
+                subtask_id=context.subtask_id,
+                event_type="tool_invocation_failed",
+                actor_kind="tool_registry",
+                payload_json={"tool_name": tool.definition.name, "error": str(exc)[:500]},
+            )
             raise
 
         invocation.status = ToolInvocationStatus.COMPLETED
         invocation.duration_ms = self._duration_ms(started_at)
         invocation.result_summary = result.summary[:1000]
         context.session.flush()
+        record_tool_trace(
+            tool_name=tool.definition.name,
+            scope=tool.definition.scope,
+            duration_seconds=invocation.duration_ms / 1000,
+            status="ok",
+        )
+        increment_event("tool_invocation", status="ok")
+        audit_writer.write(
+            session_id=audit_session_id,
+            query_id=context.query_id,
+            subtask_id=context.subtask_id,
+            event_type="tool_invocation_completed",
+            actor_kind="tool_registry",
+            payload_json={"tool_name": tool.definition.name, "summary": result.summary[:500]},
+        )
         return ToolResult(
             payload=result.payload,
             summary=result.summary,

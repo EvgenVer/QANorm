@@ -26,6 +26,9 @@ qa:
   telegram:
     enabled: false
     use_webhook: false
+    max_message_length: 3500
+    long_polling_timeout_seconds: 20
+    parse_mode: HTML
   search:
     open_web_provider: searxng
     open_web_max_results: 5

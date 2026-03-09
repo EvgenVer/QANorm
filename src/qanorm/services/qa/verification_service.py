@@ -15,6 +15,7 @@ from qanorm.agents.answer_synthesizer import StructuredAnswer
 from qanorm.db.types import QueryStatus, VerificationResult
 from qanorm.models import VerificationReport
 from qanorm.models.qa_state import EvidenceBundle, QueryState
+from qanorm.observability import increment_event, set_verification_metric
 from qanorm.prompts.registry import PromptRegistry, create_prompt_registry
 from qanorm.providers import create_provider_registry
 from qanorm.providers.base import ChatMessage, ChatModelProvider, ChatRequest, create_role_bound_providers
@@ -154,6 +155,11 @@ class VerificationService:
             security_findings=security_findings,
         )
         self._persist_outcome(state=state, outcome=outcome)
+        increment_event("verification_run", status="blocked" if outcome.has_blocking_failures else "ok")
+        set_verification_metric(f"coverage_{outcome.coverage_result.value}", 1.0)
+        set_verification_metric(f"citation_{outcome.citation_result.value}", 1.0)
+        set_verification_metric(f"hallucination_{outcome.hallucination_result.value}", 1.0)
+        set_verification_metric(f"source_labeling_{outcome.source_labeling_result.value}", 1.0)
         return outcome
 
     async def run_bounded_repair_loop(

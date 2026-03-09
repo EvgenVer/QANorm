@@ -6,6 +6,7 @@ from pathlib import Path
 
 from arq.worker import run_worker
 
+from qanorm.observability import instrument_arq_worker
 from qanorm.workers.stage2 import Stage2WorkerSettings
 
 
@@ -14,6 +15,7 @@ def run_stage2_worker() -> None:
 
     # The readiness file is used by docker-compose health checks.
     Path("/tmp/qanorm-stage2-worker.ready").write_text("ready", encoding="utf-8")
+    instrument_arq_worker(worker_name="stage2")
     run_worker(Stage2WorkerSettings)
 
 

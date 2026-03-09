@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from qanorm.audit import AuditWriter
 from qanorm.db.types import EvidenceSourceKind, FreshnessStatus, StatusNormalized
 from qanorm.models import (
     ChunkEmbedding,
@@ -18,9 +19,11 @@ from qanorm.models import (
     DocumentReference,
     DocumentVersion,
     QAEvidence,
+    QAQuery,
     RetrievalChunk,
 )
 from qanorm.normalizers.codes import clean_document_code, normalize_document_code
+from qanorm.observability import increment_event, set_backfill_metric, set_retrieval_metric
 from qanorm.providers import create_provider_registry
 from qanorm.providers.base import EmbeddingProvider, EmbeddingRequest, create_role_bound_providers
 from qanorm.repositories import ChunkEmbeddingRepository, QAEvidenceRepository, RetrievalChunkRepository
@@ -113,6 +116,9 @@ async def retrieve_normative_evidence(
         limit=request.limit,
     )
     secondary_hits = _load_secondary_hits(session, primary_hits=primary_hits, limit=max(3, request.limit // 2)) if request.include_related_documents else []
+    set_retrieval_metric("primary_hit_count", float(len(primary_hits)))
+    set_retrieval_metric("secondary_hit_count", float(len(secondary_hits)))
+    increment_event("retrieval_request", status="ok")
     return RetrievalResult(primary_hits=primary_hits, secondary_hits=secondary_hits)
 
 
@@ -169,7 +175,17 @@ def persist_normative_evidence(
     evidence = normalize_hits_to_evidence(query_id=query_id, hits=hits, subtask_id=subtask_id)
     if not evidence:
         return []
-    return QAEvidenceRepository(session).add_many(evidence)
+    stored = QAEvidenceRepository(session).add_many(evidence)
+    query = session.get(QAQuery, query_id) if stored else None
+    AuditWriter(session).write(
+        session_id=query.session_id if query is not None else None,
+        query_id=query_id,
+        subtask_id=subtask_id,
+        event_type="normative_retrieval_persisted",
+        actor_kind="retrieval_service",
+        payload_json={"evidence_count": len(stored), "hit_count": len(hits)},
+    )
+    return stored
 
 
 async def backfill_chunk_embeddings(
@@ -248,13 +264,19 @@ async def backfill_chunk_embeddings(
             # Periodic commits make the long-running backfill resumable after network failures.
             session.commit()
 
-    return {
+    result = {
         "processed_chunk_count": len(active_chunks),
         "missing_hash_count": len(missing_hashes),
         "generated_embedding_count": generated_embeddings,
         "reused_embedding_count": len(existing_hashes),
         "processed_batches": processed_batches,
     }
+    set_backfill_metric("processed_chunk_count", float(result["processed_chunk_count"]))
+    set_backfill_metric("generated_embedding_count", float(result["generated_embedding_count"]))
+    set_backfill_metric("reused_embedding_count", float(result["reused_embedding_count"]))
+    set_backfill_metric("missing_hash_count", float(result["missing_hash_count"]))
+    increment_event("embedding_backfill", status="ok")
+    return result
 
 
 def _run_exact_match_lookup(session: Session, *, request: RetrievalRequest) -> list[RetrievalHit]:

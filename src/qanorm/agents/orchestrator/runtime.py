@@ -10,6 +10,7 @@ from redis import asyncio as redis_asyncio
 from sqlalchemy.orm import Session
 
 from qanorm.agents.planner import PlannedSubtask, QueryAnalysis, QueryAnalyzer, QueryTaskDecomposer
+from qanorm.audit import AuditWriter
 from qanorm.db.types import QueryStatus, SubtaskStatus
 from qanorm.models import AuditEvent, QAQuery, QASubtask
 from qanorm.models.qa_state import QueryState, SubtaskState
@@ -108,6 +109,22 @@ class QueryOrchestrator:
 
         analysis = await self.query_analyzer.analyze(state)
         self._apply_analysis(query=query, state=state, analysis=analysis)
+        AuditWriter(self.session).write(
+            session_id=query.session_id,
+            query_id=query.id,
+            event_type="planner_bindings_used",
+            actor_kind="orchestrator",
+            payload_json={
+                "query_analyzer_provider": getattr(getattr(self.query_analyzer, "provider", None), "provider_name", "unknown"),
+                "query_analyzer_model": getattr(getattr(self.query_analyzer, "provider", None), "model", "unknown"),
+                "query_analyzer_prompt": "query_analyzer",
+                "query_analyzer_prompt_version": self._resolve_prompt_version(self.query_analyzer, "query_analyzer"),
+                "task_decomposer_provider": getattr(getattr(self.task_decomposer, "provider", None), "provider_name", "unknown"),
+                "task_decomposer_model": getattr(getattr(self.task_decomposer, "provider", None), "model", "unknown"),
+                "task_decomposer_prompt": "task_decomposer",
+                "task_decomposer_prompt_version": self._resolve_prompt_version(self.task_decomposer, "task_decomposer"),
+            },
+        )
         self._record_transition(query=query, event_type="analysis_completed", payload=analysis.to_dict())
         await self._publish(
             query.id,
@@ -259,3 +276,11 @@ class QueryOrchestrator:
         if self.progress_publisher is None:
             return
         await self.progress_publisher(query_id, event, data)
+
+    def _resolve_prompt_version(self, component: Any, prompt_name: str) -> str:
+        """Load prompt version metadata defensively for stubs used in tests."""
+
+        prompt_registry = getattr(component, "prompt_registry", None)
+        if prompt_registry is None or not hasattr(prompt_registry, "resolve_version"):
+            return "unknown"
+        return str(prompt_registry.resolve_version(prompt_name))

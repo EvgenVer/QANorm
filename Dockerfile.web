@@ -8,6 +8,8 @@ COPY web/next.config.js /app/next.config.js
 COPY web/tsconfig.json /app/tsconfig.json
 COPY web/next-env.d.ts /app/next-env.d.ts
 COPY web/app /app/app
+COPY web/components /app/components
+COPY web/lib /app/lib
 RUN npm install
 
 # Build the placeholder Next.js application so the core profile can smoke-test it.

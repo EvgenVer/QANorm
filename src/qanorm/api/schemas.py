@@ -97,3 +97,42 @@ class AnswerResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     sections: list[AnswerSectionResponse] = Field(default_factory=list)
     model_name: str | None = None
+
+
+class EvidenceResponse(BaseModel):
+    """Serialized evidence block shown alongside the final answer."""
+
+    id: UUID
+    source_kind: str
+    source_url: str | None = None
+    source_domain: str | None = None
+    document_id: UUID | None = None
+    document_version_id: UUID | None = None
+    chunk_id: UUID | None = None
+    locator: str | None = None
+    locator_end: str | None = None
+    edition_label: str | None = None
+    quote: str | None = None
+    chunk_text: str | None = None
+    freshness_status: str
+    is_normative: bool
+    requires_verification: bool
+    relevance_score: float | None = None
+
+
+class QueryDetailResponse(BaseModel):
+    """Combined query payload used by the web and Telegram transports."""
+
+    id: UUID
+    session_id: UUID
+    message_id: UUID
+    status: str
+    query_type: str | None = None
+    query_text: str
+    requires_freshness_check: bool
+    used_open_web: bool
+    used_trusted_web: bool
+    created_at: datetime | None = None
+    finished_at: datetime | None = None
+    answer: AnswerResponse | None = None
+    evidence: list[EvidenceResponse] = Field(default_factory=list)

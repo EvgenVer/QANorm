@@ -113,6 +113,9 @@ class TelegramRuntimeConfig(BaseModel):
 
     enabled: bool = False
     use_webhook: bool = False
+    max_message_length: int = Field(default=3500, gt=0)
+    long_polling_timeout_seconds: int = Field(default=20, gt=0)
+    parse_mode: str = Field(default="HTML", min_length=1)
 
 
 class SearchRuntimeConfig(BaseModel):

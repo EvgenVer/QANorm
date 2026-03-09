@@ -62,7 +62,9 @@ def test_create_app_registers_expected_routes() -> None:
     assert "/health/ready" in paths
     assert "/sessions" in paths
     assert "/sessions/{session_id}/queries" in paths
+    assert "/queries/{query_id}" in paths
     assert "/queries/{query_id}/events" in paths
+    assert "/metrics" in paths
 
 
 def test_live_endpoint_returns_ok() -> None:
@@ -72,6 +74,15 @@ def test_live_endpoint_returns_ok() -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_metrics_endpoint_exports_payload() -> None:
+    client, _, _ = _build_client()
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert "text/plain" in response.headers["content-type"]
 
 
 def test_ready_endpoint_checks_database_redis_and_arq() -> None:

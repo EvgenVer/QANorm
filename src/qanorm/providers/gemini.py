@@ -68,6 +68,8 @@ class GeminiProvider(ChatModelProvider, EmbeddingProvider):
         response = await self._request_json(
             path=f"/v1beta/models/{request.model or self.model}:generateContent",
             payload=payload,
+            model_name=request.model or self.model,
+            operation_name="chat",
         )
         candidate = (response.get("candidates") or [{}])[0]
         content = self._extract_candidate_text(candidate)
@@ -96,6 +98,8 @@ class GeminiProvider(ChatModelProvider, EmbeddingProvider):
         response = await self._request_json(
             path=f"/v1beta/models/{request.model or self.model}:batchEmbedContents",
             payload=payload,
+            model_name=request.model or self.model,
+            operation_name="embeddings",
         )
         embeddings = response.get("embeddings") or []
         vectors = [list(item.get("values") or []) for item in embeddings]
@@ -108,7 +112,14 @@ class GeminiProvider(ChatModelProvider, EmbeddingProvider):
             raw_response=response,
         )
 
-    async def _request_json(self, *, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _request_json(
+        self,
+        *,
+        path: str,
+        payload: dict[str, Any],
+        model_name: str,
+        operation_name: str,
+    ) -> dict[str, Any]:
         """Issue one Gemini HTTP request with shared timeout and retry settings."""
 
         async def _operation() -> dict[str, Any]:
@@ -128,6 +139,9 @@ class GeminiProvider(ChatModelProvider, EmbeddingProvider):
             _operation,
             timeout_seconds=self.timeout_seconds,
             max_attempts=self.max_retries,
+            provider_name=self.provider_name,
+            model_name=model_name,
+            operation_name=operation_name,
         )
 
     def _serialize_messages(self, messages: list[ChatMessage]) -> list[dict[str, Any]]:

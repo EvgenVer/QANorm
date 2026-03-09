@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from qanorm.audit import AuditWriter
 from qanorm.db.types import AnswerStatus, CoverageStatus, EvidenceSourceKind, FreshnessStatus, MessageRole, QueryStatus
 from qanorm.models import QAAnswer, QAEvidence, QAMessage, QAQuery
 from qanorm.models.qa_state import EvidenceBundle, QueryState
@@ -212,6 +213,20 @@ class AnswerSynthesizer:
             )
         )
         self.query_repository.update_state(query, status=QueryStatus.COMPLETED)
+        if self.session is not None:
+            AuditWriter(self.session).write(
+                session_id=query.session_id,
+                query_id=query.id,
+                event_type="final_answer_persisted",
+                actor_kind="answer_synthesizer",
+                payload_json={
+                    "model_provider": getattr(self.provider, "provider_name", "unknown"),
+                    "model_name": answer.model_name,
+                    "prompt_template_name": "answer_synthesizer",
+                    "prompt_version": self.prompt_registry.resolve_version("answer_synthesizer"),
+                    "coverage_status": answer.coverage_status.value,
+                },
+            )
         return saved_answer, assistant_message
 
     def _build_instruction(

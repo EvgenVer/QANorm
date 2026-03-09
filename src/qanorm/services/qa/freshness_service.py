@@ -8,6 +8,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from qanorm.audit import AuditWriter
 from qanorm.db.types import EvidenceSourceKind, FreshnessCheckStatus, FreshnessStatus, JobType
 from qanorm.jobs.scheduler import create_job
 from qanorm.models import Document, DocumentSource, DocumentVersion, FreshnessCheck, IngestionJob, QAEvidence, UpdateEvent
@@ -25,6 +26,7 @@ from qanorm.services.refresh_service import (
     determine_refresh_requirement,
     fetch_current_document_metadata,
 )
+from qanorm.observability import increment_event, set_verification_metric
 from qanorm.utils.text import normalize_whitespace
 
 
@@ -182,12 +184,15 @@ def evaluate_freshness_check(
     try:
         metadata = fetch_current_document_metadata(session, document_code=local_state.document.normalized_code)
     except Exception as exc:
-        return _persist_failure(
+        result = _persist_failure(
             session,
             check=check,
             local_state=local_state,
             error_message=str(exc),
         )
+        increment_event("freshness_check", status=result.check_status.value)
+        set_verification_metric(f"freshness_{result.check_status.value}", 1.0)
+        return result
 
     result = _compare_local_and_remote(
         session,
@@ -196,6 +201,15 @@ def evaluate_freshness_check(
         metadata=metadata,
         auto_queue_refresh=auto_queue_refresh,
     )
+    AuditWriter(session).write(
+        session_id=check.query.session_id if check.query is not None else None,
+        query_id=check.query_id,
+        event_type="freshness_evaluated",
+        actor_kind="freshness_service",
+        payload_json=result.to_payload(),
+    )
+    increment_event("freshness_check", status=result.check_status.value)
+    set_verification_metric(f"freshness_{result.check_status.value}", 1.0)
     return result
 
 
@@ -222,7 +236,7 @@ def queue_refresh_for_freshness_check(
         "refresh_requested_for_document": local_state.document.normalized_code,
     }
     session.flush()
-    return FreshnessEvaluationResult(
+    result = FreshnessEvaluationResult(
         freshness_check_id=check.id,
         document_id=local_state.document.id,
         document_code=local_state.document.normalized_code,
@@ -234,6 +248,14 @@ def queue_refresh_for_freshness_check(
         reasons=["refresh_queued"],
         details=dict(check.details_json or {}),
     )
+    AuditWriter(session).write(
+        session_id=check.query.session_id if check.query is not None else None,
+        query_id=check.query_id,
+        event_type="refresh_queued",
+        actor_kind="freshness_service",
+        payload_json=result.to_payload(),
+    )
+    return result
 
 
 def _compare_local_and_remote(

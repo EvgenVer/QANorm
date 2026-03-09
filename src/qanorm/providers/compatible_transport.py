@@ -40,6 +40,9 @@ class CompatibleTransportClient:
         path: str,
         payload: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        provider_name: str | None = None,
+        model_name: str | None = None,
+        operation_name: str = "request",
     ) -> dict[str, Any]:
         """Send one JSON request and return the decoded JSON response."""
 
@@ -67,6 +70,9 @@ class CompatibleTransportClient:
             _operation,
             timeout_seconds=self.timeout_seconds,
             max_attempts=self.max_retries,
+            provider_name=provider_name,
+            model_name=model_name,
+            operation_name=operation_name,
         )
 
     async def aclose(self) -> None:

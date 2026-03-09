@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from qanorm.db.types import ToolInvocationStatus
+from qanorm.models import ToolInvocation
 from qanorm.tools import (
     DEFAULT_ALLOWED_SCOPES,
     Tool,
@@ -43,7 +44,7 @@ def test_tool_registry_records_completed_invocation() -> None:
 
     result = asyncio.run(registry.invoke("fake_normative", context=context, payload={"query_text": "42"}))
 
-    invocation = session.add.call_args.args[0]
+    invocation = _find_tool_invocation(session)
     assert result.payload["echo"] == {"query_text": "42"}
     assert invocation.tool_name == "fake_normative"
     assert invocation.tool_scope == "normative"
@@ -72,7 +73,7 @@ def test_tool_registry_records_failed_invocation() -> None:
     with pytest.raises(ToolInputError):
         asyncio.run(registry.invoke("failing_normative", context=context, payload={"query_text": "42"}))
 
-    invocation = session.add.call_args.args[0]
+    invocation = _find_tool_invocation(session)
     assert invocation.status == ToolInvocationStatus.FAILED
     assert invocation.result_summary == "boom"
 
@@ -120,3 +121,11 @@ def test_answer_format_tool_builds_markdown_sections() -> None:
     assert "## Ответ" in result.payload["markdown"]
     assert "## Предупреждения" in result.payload["markdown"]
     assert "- SP 1.0" in result.payload["markdown"]
+
+
+def _find_tool_invocation(session: MagicMock) -> ToolInvocation:
+    for call in session.add.call_args_list:
+        candidate = call.args[0]
+        if isinstance(candidate, ToolInvocation):
+            return candidate
+    raise AssertionError("ToolInvocation was not persisted.")

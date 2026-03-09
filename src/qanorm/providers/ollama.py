@@ -52,7 +52,7 @@ class OllamaProvider(ChatModelProvider, EmbeddingProvider):
         if request.temperature is not None:
             payload["options"] = {"temperature": request.temperature}
 
-        response = await self._request_json(path="/api/chat", payload=payload)
+        response = await self._request_json(path="/api/chat", payload=payload, operation_name="chat", model_name=request.model or self.model)
         message = response.get("message") or {}
         return ChatResponse(
             provider=self.provider_name,
@@ -70,7 +70,12 @@ class OllamaProvider(ChatModelProvider, EmbeddingProvider):
             "model": request.model or self.model,
             "input": request.texts,
         }
-        response = await self._request_json(path="/api/embed", payload=payload)
+        response = await self._request_json(
+            path="/api/embed",
+            payload=payload,
+            operation_name="embeddings",
+            model_name=request.model or self.model,
+        )
         vectors = [list(item) for item in response.get("embeddings") or []]
         dimensions = len(vectors[0]) if vectors else 0
         return EmbeddingResponse(
@@ -81,7 +86,14 @@ class OllamaProvider(ChatModelProvider, EmbeddingProvider):
             raw_response=response,
         )
 
-    async def _request_json(self, *, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _request_json(
+        self,
+        *,
+        path: str,
+        payload: dict[str, Any],
+        operation_name: str,
+        model_name: str,
+    ) -> dict[str, Any]:
         """Issue one Ollama HTTP request with shared timeout and retry handling."""
 
         async def _operation() -> dict[str, Any]:
@@ -96,6 +108,9 @@ class OllamaProvider(ChatModelProvider, EmbeddingProvider):
             _operation,
             timeout_seconds=self.timeout_seconds,
             max_attempts=self.max_retries,
+            provider_name=self.provider_name,
+            model_name=model_name,
+            operation_name=operation_name,
         )
 
     def _serialize_message(self, message: ChatMessage) -> dict[str, str]:

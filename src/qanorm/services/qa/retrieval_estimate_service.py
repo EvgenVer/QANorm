@@ -12,6 +12,7 @@ from qanorm.db.types import EMBEDDING_DIMENSIONS, StatusNormalized
 from qanorm.models import Document, DocumentVersion
 from qanorm.providers.base import create_role_bound_providers
 from qanorm.providers import create_provider_registry
+from qanorm.observability import set_retrieval_metric
 from qanorm.settings import RuntimeConfig, get_settings
 from qanorm.services.qa.chunking_service import ChunkingConfig, build_retrieval_chunk_drafts
 from qanorm.repositories import DocumentNodeRepository
@@ -89,7 +90,7 @@ def estimate_retrieval_rollout(
     # HNSW overhead is approximate; the estimate is meant for planning, not billing precision.
     index_bytes = ceil(storage_bytes * 0.35)
 
-    return RetrievalEstimate(
+    estimate = RetrievalEstimate(
         active_document_count=len(rows),
         active_version_count=len(rows),
         estimated_chunk_count=estimated_chunk_count,
@@ -106,6 +107,12 @@ def estimate_retrieval_rollout(
         embedding_provider=embedding_provider_name,
         embedding_model=embedding_model_name,
     )
+    set_retrieval_metric("estimated_chunk_count", float(estimate.estimated_chunk_count))
+    set_retrieval_metric("unique_chunk_count", float(estimate.unique_chunk_count))
+    set_retrieval_metric("estimated_token_count", float(estimate.estimated_token_count))
+    set_retrieval_metric("estimated_embedding_storage_bytes", float(estimate.estimated_embedding_storage_bytes))
+    set_retrieval_metric("estimated_embedding_index_bytes", float(estimate.estimated_embedding_index_bytes))
+    return estimate
 
 
 def render_retrieval_estimate_report(estimate: RetrievalEstimate) -> str:

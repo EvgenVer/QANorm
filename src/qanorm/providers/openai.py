@@ -47,7 +47,14 @@ class OpenAICompatibleProviderBase(ChatModelProvider, EmbeddingProvider):
         if request.max_tokens is not None:
             payload["max_tokens"] = request.max_tokens
 
-        response = await self.transport.request_json(method="POST", path="/chat/completions", payload=payload)
+        response = await self.transport.request_json(
+            method="POST",
+            path="/chat/completions",
+            payload=payload,
+            provider_name=self.provider_name,
+            model_name=request.model or self.model,
+            operation_name="chat",
+        )
         choice = (response.get("choices") or [{}])[0]
         message = choice.get("message") or {}
         content = message.get("content") or ""
@@ -67,7 +74,14 @@ class OpenAICompatibleProviderBase(ChatModelProvider, EmbeddingProvider):
             "model": request.model or self.model,
             "input": request.texts,
         }
-        response = await self.transport.request_json(method="POST", path="/embeddings", payload=payload)
+        response = await self.transport.request_json(
+            method="POST",
+            path="/embeddings",
+            payload=payload,
+            provider_name=self.provider_name,
+            model_name=request.model or self.model,
+            operation_name="embeddings",
+        )
         vectors = [list(item.get("embedding") or []) for item in response.get("data") or []]
         dimensions = len(vectors[0]) if vectors else 0
         return EmbeddingResponse(

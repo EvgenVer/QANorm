@@ -54,7 +54,7 @@ class AnthropicProvider(ChatModelProvider):
         if request.temperature is not None:
             payload["temperature"] = request.temperature
 
-        response = await self._request_json(payload=payload)
+        response = await self._request_json(payload=payload, model_name=request.model or self.model)
         content_blocks = response.get("content") or []
         text = "\n".join(str(block.get("text") or "") for block in content_blocks if block.get("type") == "text").strip()
         return ChatResponse(
@@ -66,7 +66,7 @@ class AnthropicProvider(ChatModelProvider):
             raw_response=response,
         )
 
-    async def _request_json(self, *, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _request_json(self, *, payload: dict[str, Any], model_name: str) -> dict[str, Any]:
         """Issue one Anthropic request with shared timeout and retry handling."""
 
         async def _operation() -> dict[str, Any]:
@@ -88,6 +88,9 @@ class AnthropicProvider(ChatModelProvider):
             _operation,
             timeout_seconds=self.timeout_seconds,
             max_attempts=self.max_retries,
+            provider_name=self.provider_name,
+            model_name=model_name,
+            operation_name="chat",
         )
 
     def _serialize_message(self, message: ChatMessage) -> dict[str, Any]:

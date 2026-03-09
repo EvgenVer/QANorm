@@ -6,11 +6,13 @@ import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from time import perf_counter
 from typing import Any, Literal, Protocol, cast
 
 from httpx import HTTPError, TimeoutException
 from tenacity import AsyncRetrying
 
+from qanorm.observability import record_provider_trace
 from qanorm.prompts.base import LoadedPromptTemplate, PromptRenderResult, PromptTemplateDefinition
 from qanorm.settings import ProviderName, ProviderSelection, QAFileConfig, RuntimeConfig, get_settings
 from qanorm.utils.retry import build_retry_kwargs
@@ -329,6 +331,9 @@ async def run_provider_call(
     *,
     timeout_seconds: float,
     max_attempts: int,
+    provider_name: str | None = None,
+    model_name: str | None = None,
+    operation_name: str = "request",
 ) -> Any:
     """Execute one provider call with timeout and retry semantics."""
 
@@ -339,13 +344,26 @@ async def run_provider_call(
         retry_on=(ProviderTimeoutError, TimeoutException, HTTPError),
     )
 
-    async for attempt in AsyncRetrying(**retry_kwargs):
-        with attempt:
-            try:
-                return await asyncio.wait_for(operation(), timeout=timeout_seconds)
-            except asyncio.TimeoutError as exc:
-                raise ProviderTimeoutError("Provider request timed out.") from exc
-            except (TimeoutException, HTTPError) as exc:
-                raise ProviderRequestError("Provider request failed.") from exc
-
-    raise ProviderRequestError("Provider request failed after retries.")
+    started_at = perf_counter()
+    status = "failed"
+    try:
+        async for attempt in AsyncRetrying(**retry_kwargs):
+            with attempt:
+                try:
+                    result = await asyncio.wait_for(operation(), timeout=timeout_seconds)
+                    status = "ok"
+                    return result
+                except asyncio.TimeoutError as exc:
+                    raise ProviderTimeoutError("Provider request timed out.") from exc
+                except (TimeoutException, HTTPError) as exc:
+                    raise ProviderRequestError("Provider request failed.") from exc
+        raise ProviderRequestError("Provider request failed after retries.")
+    finally:
+        if provider_name and model_name:
+            record_provider_trace(
+                provider_name=provider_name,
+                model_name=model_name,
+                operation=operation_name,
+                duration_seconds=perf_counter() - started_at,
+                status=status,
+            )

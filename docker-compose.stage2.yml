@@ -181,6 +181,9 @@ services:
       - "3001:3000"
     volumes:
       - ./.grafana:/var/lib/grafana
+      - ./deploy/observability/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./deploy/observability/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./deploy/observability/stage2-dashboard.json:/etc/grafana/provisioning/dashboards/json/stage2-dashboard.json:ro
 
   loki:
     image: grafana/loki:latest
