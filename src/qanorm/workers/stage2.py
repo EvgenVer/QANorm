@@ -15,6 +15,7 @@ from arq.connections import RedisSettings
 from redis import asyncio as redis_asyncio
 
 from qanorm.db.session import session_scope
+from qanorm.services.qa.freshness_service import evaluate_freshness_check, queue_refresh_for_freshness_check
 from qanorm.services.qa.session_service import SessionService
 from qanorm.settings import get_qa_config, get_settings
 
@@ -156,6 +157,29 @@ async def cleanup_expired_sessions_job(ctx: dict[str, Any]) -> dict[str, Any]:
     return {"status": "ok", "removed_sessions": removed}
 
 
+async def freshness_check_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    """Evaluate one pending freshness check and optionally queue a refresh."""
+
+    with session_scope() as session:
+        result = evaluate_freshness_check(
+            session,
+            freshness_check_id=UUID(str(payload["freshness_check_id"])),
+            auto_queue_refresh=bool(payload.get("auto_queue_refresh", True)),
+        )
+    return result.to_payload()
+
+
+async def document_refresh_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    """Queue or reuse a Stage 1 refresh job for one persisted freshness check."""
+
+    with session_scope() as session:
+        result = queue_refresh_for_freshness_check(
+            session,
+            freshness_check_id=UUID(str(payload["freshness_check_id"])),
+        )
+    return result.to_payload()
+
+
 class Stage2WorkerSettings:
     """ARQ worker settings for the Stage 2 runtime."""
 
@@ -164,6 +188,8 @@ class Stage2WorkerSettings:
         qa_noop_job,
         cleanup_session_state_job,
         cleanup_expired_sessions_job,
+        freshness_check_job,
+        document_refresh_job,
     ]
     queue_name = "arq:queue"
     max_jobs = 10
