@@ -28,7 +28,10 @@ class CompatibleTransportClient:
         self.api_key = api_key
         self.default_headers = default_headers or {}
         # Allow injection in tests so adapters can be validated without network access.
-        self._client = client or httpx.AsyncClient(base_url=self.base_url)
+        self._client = client or httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=self.timeout_seconds,
+        )
 
     async def request_json(
         self,
@@ -52,6 +55,7 @@ class CompatibleTransportClient:
                 url=self._build_path(path),
                 json=payload,
                 headers=request_headers,
+                timeout=self.timeout_seconds,
             )
             response.raise_for_status()
             decoded = response.json()

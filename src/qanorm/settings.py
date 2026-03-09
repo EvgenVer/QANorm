@@ -95,6 +95,7 @@ class ProvidersRuntimeConfig(BaseModel):
     orchestration: ProviderSelection
     synthesis: ProviderSelection
     embeddings: ProviderSelection
+    embedding_output_dimensions: int = Field(default=768, gt=0)
     prompt_catalog_dir: Path
     prompt_default_version: str = Field(default="v1", min_length=1)
     prompt_versions: dict[str, str] = Field(default_factory=dict)

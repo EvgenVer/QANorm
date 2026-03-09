@@ -837,37 +837,37 @@
 
 ### Блок AG. Нормативный retrieval поверх базы Этапа 1
 
-698. [ ] Создать файл `src/qanorm/models/retrieval_chunk.py`.
-699. [ ] Зафиксировать SQLAlchemy-модель `retrieval_chunks`.
-700. [ ] Создать файл `src/qanorm/models/chunk_embedding.py`.
-701. [ ] Зафиксировать SQLAlchemy-модель `chunk_embeddings`.
-702. [ ] Расширить SQLAlchemy-модель `qa_evidence` полями `chunk_id`, `start_node_id`, `end_node_id`, `locator_end`, `chunk_text`.
-703. [ ] Экспортировать новые retrieval-модели и связи в `src/qanorm/models/__init__.py`.
-704. [ ] Создать файлы `src/qanorm/repositories/retrieval_chunks.py` и `src/qanorm/repositories/chunk_embeddings.py`.
-705. [ ] Реализовать сохранение и выборку `retrieval_chunks`, `chunk_embeddings` и обновить `qa_evidence` repository под новые поля.
-706. [ ] Создать Alembic-ревизию для `retrieval_chunks`, `chunk_embeddings` и расширения `qa_evidence`.
-707. [ ] Проверить применение retrieval-миграции на чистой БД и совместимость с уже наполненной БД Этапа 1.
-708. [ ] Создать файл `src/qanorm/services/qa/chunking_service.py`.
-709. [ ] Реализовать детерминированное построение `retrieval_chunks` из `document_nodes` по логически связанным нормативным блокам с минимизацией overlap.
-710. [ ] Реализовать вычисление `chunk_hash`, дедупликацию идентичных chunks и стратегию переиспользования неизменившихся chunks.
-711. [ ] Создать файл `src/qanorm/services/qa/retrieval_estimate_service.py`.
-712. [ ] Реализовать dry-run estimate по всему active нормативному корпусу: число документов, число `retrieval_chunks`, примерный объем токенов, ожидаемый размер хранения и ориентировочная стоимость embeddings.
-713. [ ] Реализовать формирование отчета dry-run estimate без фактической записи embeddings в БД.
-714. [ ] Реализовать backfill `retrieval_chunks` для всех active документов нормативного корпуса.
+698. [x] Создать файл `src/qanorm/models/retrieval_chunk.py`.
+699. [x] Зафиксировать SQLAlchemy-модель `retrieval_chunks`.
+700. [x] Создать файл `src/qanorm/models/chunk_embedding.py`.
+701. [x] Зафиксировать SQLAlchemy-модель `chunk_embeddings`.
+702. [x] Расширить SQLAlchemy-модель `qa_evidence` полями `chunk_id`, `start_node_id`, `end_node_id`, `locator_end`, `chunk_text`.
+703. [x] Экспортировать новые retrieval-модели и связи в `src/qanorm/models/__init__.py`.
+704. [x] Создать файлы `src/qanorm/repositories/retrieval_chunks.py` и `src/qanorm/repositories/chunk_embeddings.py`.
+705. [x] Реализовать сохранение и выборку `retrieval_chunks`, `chunk_embeddings` и обновить `qa_evidence` repository под новые поля.
+706. [x] Создать Alembic-ревизию для `retrieval_chunks`, `chunk_embeddings` и расширения `qa_evidence`.
+707. [x] Проверить применение retrieval-миграции на чистой БД и совместимость с уже наполненной БД Этапа 1.
+708. [x] Создать файл `src/qanorm/services/qa/chunking_service.py`.
+709. [x] Реализовать детерминированное построение `retrieval_chunks` из `document_nodes` по логически связанным нормативным блокам с минимизацией overlap.
+710. [x] Реализовать вычисление `chunk_hash`, дедупликацию идентичных chunks и стратегию переиспользования неизменившихся chunks.
+711. [x] Создать файл `src/qanorm/services/qa/retrieval_estimate_service.py`.
+712. [x] Реализовать dry-run estimate по всему active нормативному корпусу: число документов, число `retrieval_chunks`, примерный объем токенов, ожидаемый размер хранения и ориентировочная стоимость embeddings.
+713. [x] Реализовать формирование отчета dry-run estimate без фактической записи embeddings в БД.
+714. [x] Реализовать backfill `retrieval_chunks` для всех active документов нормативного корпуса.
 715. [ ] Реализовать генерацию и backfill реальных embeddings только для active `retrieval_chunks` по всему active нормативному корпусу.
-716. [ ] Создать файл `src/qanorm/services/qa/retrieval_service.py`.
-717. [ ] Реализовать FTS-поиск по `retrieval_chunks`.
-718. [ ] Реализовать vector search по `chunk_embeddings` с привязкой к `retrieval_chunks`.
-719. [ ] Реализовать exact-match / code lookup / locator-oriented путь поиска без обязательного vector search.
-720. [ ] Реализовать фильтрацию retrieval по active версии документа, статусу, типу документа и дополнительным metadata-признакам.
-721. [ ] Реализовать гибридное объединение результатов FTS, vector search и exact-match поиска.
-722. [ ] Реализовать восстановление точного локатора, границ chunk-а и релевантной цитаты через `document_nodes`.
-723. [ ] Реализовать обогащение результата данными документа, редакции, `chunk_id`, `locator_end`, `chunk_text` и freshness status.
-724. [ ] Реализовать нормализацию результата retrieval в evidence-объект нормативного типа и дедупликацию по `chunk_id` и `chunk_hash`.
-725. [ ] Реализовать использование `document_references` для поиска связанных нормативных документов и включение их в secondary evidence.
-726. [ ] Реализовать `top-k`, пагинацию и базовый ranking retrieval-результатов.
-727. [ ] Реализовать unit-тесты на chunking, dry-run estimate, hybrid retrieval и ranking.
-728. [ ] Реализовать интеграционный тест нормативного retrieval на фикстурах Этапа 1 и проверку согласованности dry-run estimate.
+716. [x] Создать файл `src/qanorm/services/qa/retrieval_service.py`.
+717. [x] Реализовать FTS-поиск по `retrieval_chunks`.
+718. [x] Реализовать vector search по `chunk_embeddings` с привязкой к `retrieval_chunks`.
+719. [x] Реализовать exact-match / code lookup / locator-oriented путь поиска без обязательного vector search.
+720. [x] Реализовать фильтрацию retrieval по active версии документа, статусу, типу документа и дополнительным metadata-признакам.
+721. [x] Реализовать гибридное объединение результатов FTS, vector search и exact-match поиска.
+722. [x] Реализовать восстановление точного локатора, границ chunk-а и релевантной цитаты через `document_nodes`.
+723. [x] Реализовать обогащение результата данными документа, редакции, `chunk_id`, `locator_end`, `chunk_text` и freshness status.
+724. [x] Реализовать нормализацию результата retrieval в evidence-объект нормативного типа и дедупликацию по `chunk_id` и `chunk_hash`.
+725. [x] Реализовать использование `document_references` для поиска связанных нормативных документов и включение их в secondary evidence.
+726. [x] Реализовать `top-k`, пагинацию и базовый ranking retrieval-результатов.
+727. [x] Реализовать unit-тесты на chunking, dry-run estimate, hybrid retrieval и ranking.
+728. [x] Реализовать интеграционный тест нормативного retrieval на фикстурах Этапа 1 и проверку согласованности dry-run estimate.
 729. [ ] Выполнить smoke-проверку chunk-based retrieval на наполненной БД Этапа 1.
 
 ### Блок AH. Оркестратор и декомпозиция пользовательского запроса

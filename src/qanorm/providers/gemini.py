@@ -38,9 +38,13 @@ class GeminiProvider(ChatModelProvider, EmbeddingProvider):
     ) -> None:
         self.model = selection.model
         self.api_key = runtime_config.env.gemini_api_key
+        self.embedding_output_dimensions = runtime_config.qa.providers.embedding_output_dimensions
         self.timeout_seconds = runtime_config.app.request_timeout_seconds
         self.max_retries = runtime_config.app.max_retries + 1
-        self._client = client or httpx.AsyncClient(base_url="https://generativelanguage.googleapis.com")
+        self._client = client or httpx.AsyncClient(
+            base_url="https://generativelanguage.googleapis.com",
+            timeout=self.timeout_seconds,
+        )
 
     async def generate(self, request: ChatRequest) -> ChatResponse:
         """Call the Gemini generateContent endpoint."""
@@ -84,6 +88,7 @@ class GeminiProvider(ChatModelProvider, EmbeddingProvider):
                 {
                     "model": f"models/{request.model or self.model}",
                     "content": {"parts": [{"text": text}]},
+                    "outputDimensionality": self.embedding_output_dimensions,
                 }
                 for text in request.texts
             ]
@@ -111,6 +116,7 @@ class GeminiProvider(ChatModelProvider, EmbeddingProvider):
                 path,
                 params={"key": self.api_key},
                 json=payload,
+                timeout=self.timeout_seconds,
             )
             response.raise_for_status()
             decoded = response.json()

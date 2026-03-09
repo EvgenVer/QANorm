@@ -1,0 +1,12 @@
+# Retrieval Dry-Run Estimate
+- Active documents: 1681
+- Active versions: 1681
+- Estimated retrieval chunks: 189109
+- Unique chunk hashes: 174716
+- Estimated tokens: 26249720
+- Estimated characters: 216376348
+- Embedding provider/model: gemini / gemini-embedding-001
+- Embedding dimensions: 768
+- Estimated embedding storage bytes: 536727552
+- Estimated embedding index bytes: 187854644
+- Estimated embedding cost: unknown

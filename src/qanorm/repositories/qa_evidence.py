@@ -25,6 +25,13 @@ class QAEvidenceRepository:
         self.session.flush()
         return items
 
+    def add(self, evidence: QAEvidence) -> QAEvidence:
+        """Insert one evidence row and flush it."""
+
+        self.session.add(evidence)
+        self.session.flush()
+        return evidence
+
     def list_for_query(
         self,
         query_id: UUID,

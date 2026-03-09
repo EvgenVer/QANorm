@@ -21,9 +21,12 @@ class QAEvidence(Base):
         Index("ix_qa_evidence_query_id", "query_id"),
         Index("ix_qa_evidence_subtask_id", "subtask_id"),
         Index("ix_qa_evidence_source_kind", "source_kind"),
+        Index("ix_qa_evidence_chunk_id", "chunk_id"),
         Index("ix_qa_evidence_document_id", "document_id"),
         Index("ix_qa_evidence_document_version_id", "document_version_id"),
         Index("ix_qa_evidence_node_id", "node_id"),
+        Index("ix_qa_evidence_start_node_id", "start_node_id"),
+        Index("ix_qa_evidence_end_node_id", "end_node_id"),
         Index("ix_qa_evidence_source_domain", "source_domain"),
         Index("ix_qa_evidence_created_at", "created_at"),
     )
@@ -37,6 +40,11 @@ class QAEvidence(Base):
     subtask_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("qa_subtasks.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    chunk_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("retrieval_chunks.id", ondelete="SET NULL"),
         nullable=True,
     )
     source_kind: Mapped[EvidenceSourceKind] = mapped_column(
@@ -62,11 +70,23 @@ class QAEvidence(Base):
         ForeignKey("document_nodes.id", ondelete="SET NULL"),
         nullable=True,
     )
+    start_node_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("document_nodes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    end_node_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("document_nodes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
     edition_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     locator: Mapped[str | None] = mapped_column(Text, nullable=True)
+    locator_end: Mapped[str | None] = mapped_column(Text, nullable=True)
     quote: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chunk_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     relevance_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     freshness_status: Mapped[FreshnessStatus] = mapped_column(
         Enum(
@@ -84,6 +104,13 @@ class QAEvidence(Base):
 
     query: Mapped["QAQuery"] = relationship("QAQuery", back_populates="evidence_blocks")
     subtask: Mapped["QASubtask | None"] = relationship("QASubtask", back_populates="evidence_blocks")
+    chunk: Mapped["RetrievalChunk | None"] = relationship(
+        "RetrievalChunk",
+        back_populates="evidence_blocks",
+        foreign_keys=[chunk_id],
+    )
     document: Mapped["Document | None"] = relationship("Document")
     document_version: Mapped["DocumentVersion | None"] = relationship("DocumentVersion")
-    node: Mapped["DocumentNode | None"] = relationship("DocumentNode")
+    node: Mapped["DocumentNode | None"] = relationship("DocumentNode", foreign_keys=[node_id])
+    start_node: Mapped["DocumentNode | None"] = relationship("DocumentNode", foreign_keys=[start_node_id])
+    end_node: Mapped["DocumentNode | None"] = relationship("DocumentNode", foreign_keys=[end_node_id])

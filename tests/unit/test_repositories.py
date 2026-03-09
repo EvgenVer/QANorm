@@ -7,6 +7,7 @@ from uuid import uuid4
 from qanorm.db.types import ArtifactType, JobStatus, QueryStatus, SessionChannel, SessionStatus
 from qanorm.models import (
     AuditEvent,
+    ChunkEmbedding,
     Document,
     DocumentNode,
     DocumentSource,
@@ -20,6 +21,7 @@ from qanorm.models import (
     QASession,
     QASubtask,
     RawArtifact,
+    RetrievalChunk,
     SearchEvent,
     SecurityEvent,
     ToolInvocation,
@@ -31,6 +33,7 @@ from qanorm.models import (
 )
 from qanorm.repositories import (
     AuditEventRepository,
+    ChunkEmbeddingRepository,
     DocumentNodeRepository,
     DocumentRepository,
     DocumentVersionRepository,
@@ -44,6 +47,7 @@ from qanorm.repositories import (
     QASessionRepository,
     QASubtaskRepository,
     RawArtifactRepository,
+    RetrievalChunkRepository,
     SearchEventRepository,
     SecurityEventRepository,
     ToolInvocationRepository,
@@ -278,6 +282,18 @@ def test_qa_evidence_repository_add_many_flushes_session() -> None:
     session.flush.assert_called_once()
 
 
+def test_qa_evidence_repository_add_flushes_session() -> None:
+    session = _mock_session()
+    evidence = QAEvidence(query_id=uuid4(), source_kind="normative")
+
+    repository = QAEvidenceRepository(session)
+    result = repository.add(evidence)
+
+    assert result is evidence
+    session.add.assert_called_once_with(evidence)
+    session.flush.assert_called_once()
+
+
 def test_qa_answer_repository_get_by_query_uses_scalar_lookup() -> None:
     session = _mock_session()
     query_id = uuid4()
@@ -309,6 +325,26 @@ def test_supporting_stage2_repositories_flush_added_rows() -> None:
     audit_event = AuditEvent(session_id=session_id, event_type="query_started", actor_kind="system")
     search_event = SearchEvent(provider_name="searxng", search_scope="open_web", query_text="test")
     tool_invocation = ToolInvocation(query_id=query_id, subtask_id=subtask_id, tool_name="search", tool_scope="web")
+    retrieval_chunk = RetrievalChunk(
+        document_id=uuid4(),
+        document_version_id=uuid4(),
+        start_node_id=uuid4(),
+        end_node_id=uuid4(),
+        chunk_index=1,
+        chunk_type="point",
+        chunk_text="Chunk text",
+        chunk_hash="1" * 64,
+        char_count=10,
+        token_count=2,
+    )
+    chunk_embedding = ChunkEmbedding(
+        chunk_hash="1" * 64,
+        model_provider="ollama",
+        model_name="bge-m3",
+        model_revision="",
+        dimensions=1024,
+        embedding=[0.1, 0.2],
+    )
 
     assert VerificationReportRepository(session).add(verification_report) is verification_report
     assert FreshnessCheckRepository(session).add(freshness_check) is freshness_check
@@ -316,8 +352,43 @@ def test_supporting_stage2_repositories_flush_added_rows() -> None:
     assert AuditEventRepository(session).add(audit_event) is audit_event
     assert SearchEventRepository(session).add(search_event) is search_event
     assert ToolInvocationRepository(session).add(tool_invocation) is tool_invocation
+    assert RetrievalChunkRepository(session).add_many([retrieval_chunk]) == [retrieval_chunk]
+    assert ChunkEmbeddingRepository(session).add_many([chunk_embedding]) == [chunk_embedding]
     assert session.add.call_count == 6
-    assert session.flush.call_count == 6
+    assert session.add_all.call_count == 2
+    assert session.flush.call_count == 8
+
+
+def test_retrieval_chunk_repository_delete_for_document_version_flushes() -> None:
+    session = _mock_session()
+    document_version_id = uuid4()
+
+    repository = RetrievalChunkRepository(session)
+    repository.delete_for_document_version(document_version_id)
+
+    session.execute.assert_called_once()
+    session.flush.assert_called_once()
+
+
+def test_chunk_embedding_repository_list_for_hashes_uses_scalar_query() -> None:
+    session = _mock_session()
+    expected = [
+        ChunkEmbedding(
+            chunk_hash="1" * 64,
+            model_provider="ollama",
+            model_name="bge-m3",
+            model_revision="",
+            dimensions=1024,
+            embedding=[0.1, 0.2],
+        )
+    ]
+    session.execute.return_value.scalars.return_value.all.return_value = expected
+
+    repository = ChunkEmbeddingRepository(session)
+    result = repository.list_for_hashes(["1" * 64], model_provider="ollama", model_name="bge-m3")
+
+    assert result == expected
+    session.execute.assert_called_once()
 
 
 def test_freshness_check_repository_lists_results_for_query() -> None:

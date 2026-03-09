@@ -14,8 +14,9 @@ qa:
       provider: ollama
       model: qwen2.5:14b-instruct
     embeddings:
-      provider: ollama
-      model: bge-m3
+      provider: gemini
+      model: gemini-embedding-001
+    embedding_output_dimensions: 768
     prompt_catalog_dir: src/qanorm/prompts/templates
     prompt_default_version: v1
     prompt_versions: {}
