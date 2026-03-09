@@ -61,3 +61,39 @@ class StreamEvent(BaseModel):
     query_id: UUID
     data: dict[str, Any]
     created_at: datetime
+
+
+class AnswerCitationResponse(BaseModel):
+    """Serialized citation shown in a structured answer section."""
+
+    title: str
+    edition_label: str | None = None
+    locator: str | None = None
+    quote: str | None = None
+    is_normative: bool
+    requires_verification: bool
+
+
+class AnswerSectionResponse(BaseModel):
+    """Structured answer section for the web and Telegram adapters."""
+
+    heading: str
+    body: str
+    source_kind: str
+    citations: list[AnswerCitationResponse] = Field(default_factory=list)
+
+
+class AnswerResponse(BaseModel):
+    """Serialized structured answer returned by later answer endpoints."""
+
+    answer_text: str
+    markdown: str
+    answer_format: str
+    coverage_status: str
+    has_stale_sources: bool
+    has_external_sources: bool
+    assumptions: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    sections: list[AnswerSectionResponse] = Field(default_factory=list)
+    model_name: str | None = None

@@ -1,9 +1,12 @@
 """Stage 2 agent package."""
 
 from qanorm.agents.orchestrator import QueryOrchestrator, QueryPlanningResult
+from qanorm.agents.answer_synthesizer import AnswerSection, AnswerSynthesizer, StructuredAnswer
 from qanorm.agents.planner import PlannedSubtask, QueryAnalysis, QueryAnalyzer, QueryComplexity, QueryTaskDecomposer
 
 __all__ = [
+    "AnswerSection",
+    "AnswerSynthesizer",
     "PlannedSubtask",
     "QueryAnalysis",
     "QueryAnalyzer",
@@ -11,4 +14,5 @@ __all__ = [
     "QueryOrchestrator",
     "QueryPlanningResult",
     "QueryTaskDecomposer",
+    "StructuredAnswer",
 ]
