@@ -1,0 +1,4 @@
+trusted_sources:
+  # Allowlisted domains are synchronized into a local searchable store.
+  # Leave the list empty until a concrete trusted source rollout is approved.
+  sources: []

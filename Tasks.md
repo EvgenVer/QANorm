@@ -929,68 +929,68 @@
 
 ### Блок AK. Trusted sources и локальный индекс доверенных источников
 
-778. [ ] Создать файл `configs/trusted_sources.yaml`.
-779. [ ] Реализовать загрузку allowlist trusted domains в настройки приложения.
-780. [ ] Определить конфигурационную модель trusted source adapter.
-781. [ ] Создать файл `src/qanorm/fetchers/trusted_sources.py`.
-782. [ ] Реализовать базовую загрузку страницы trusted source.
-783. [ ] Реализовать discovery trusted source через `sitemap.xml` или эквивалентную карту источника.
-784. [ ] Реализовать сохранение `trusted_source_sync_run`.
-785. [ ] Реализовать сохранение `trusted_source_document`.
-786. [ ] Реализовать chunking текста trusted source документа.
-787. [ ] Реализовать индексацию чанков trusted source для локального поиска.
-788. [ ] Реализовать локальный поиск по индексу trusted sources.
-789. [ ] Реализовать нормализацию результата trusted source в evidence-объект.
-790. [ ] Реализовать background job `trusted_source_sync_job`.
-791. [ ] Реализовать CLI-команду ручной синхронизации trusted sources.
-792. [ ] Реализовать запись вызовов trusted search в `search_events`.
-793. [ ] Реализовать unit-тесты на sync и search trusted sources.
+778. [x] Создать файл `configs/trusted_sources.yaml`.
+779. [x] Реализовать загрузку allowlist trusted domains в настройки приложения.
+780. [x] Определить конфигурационную модель trusted source adapter.
+781. [x] Создать файл `src/qanorm/fetchers/trusted_sources.py`.
+782. [x] Реализовать базовую загрузку страницы trusted source.
+783. [x] Реализовать discovery trusted source через `sitemap.xml` или эквивалентную карту источника.
+784. [x] Реализовать сохранение `trusted_source_sync_run`.
+785. [x] Реализовать сохранение `trusted_source_document`.
+786. [x] Реализовать chunking текста trusted source документа.
+787. [x] Реализовать индексацию чанков trusted source для локального поиска.
+788. [x] Реализовать локальный поиск по индексу trusted sources.
+789. [x] Реализовать нормализацию результата trusted source в evidence-объект.
+790. [x] Реализовать background job `trusted_source_sync_job`.
+791. [x] Реализовать CLI-команду ручной синхронизации trusted sources.
+792. [x] Реализовать запись вызовов trusted search в `search_events`.
+793. [x] Реализовать unit-тесты на sync и search trusted sources.
 794. [ ] Выполнить smoke-проверку retrieval по одному allowlist-домену.
 
 ### Блок AL. Open web search через self-hosted SearXNG
 
-795. [ ] Добавить в настройки параметры подключения к `SearXNG`.
-796. [ ] Подготовить локальный способ запуска self-hosted `SearXNG`.
-797. [ ] Добавить в `docker-compose.stage2.yml` сервис `SearXNG` и его базовую конфигурацию.
-798. [ ] Создать файл `src/qanorm/providers/searxng.py`.
-799. [ ] Реализовать клиент поиска в `SearXNG`.
-800. [ ] Реализовать безопасный query builder для open web search.
-801. [ ] Реализовать доменные фильтры и ограничение числа результатов.
-802. [ ] Реализовать запись open web поисков в `search_events`.
-803. [ ] Реализовать загрузку содержимого выбранной страницы из search result.
-804. [ ] Реализовать санитарную очистку HTML и извлечение чистого текста.
-805. [ ] Реализовать нормализацию open web результата в evidence-объект.
-806. [ ] Реализовать background job `open_web_research_job`.
+795. [x] Добавить в настройки параметры подключения к `SearXNG`.
+796. [x] Подготовить локальный способ запуска self-hosted `SearXNG`.
+797. [x] Добавить в `docker-compose.stage2.yml` сервис `SearXNG` и его базовую конфигурацию.
+798. [x] Создать файл `src/qanorm/providers/searxng.py`.
+799. [x] Реализовать клиент поиска в `SearXNG`.
+800. [x] Реализовать безопасный query builder для open web search.
+801. [x] Реализовать доменные фильтры и ограничение числа результатов.
+802. [x] Реализовать запись open web поисков в `search_events`.
+803. [x] Реализовать загрузку содержимого выбранной страницы из search result.
+804. [x] Реализовать санитарную очистку HTML и извлечение чистого текста.
+805. [x] Реализовать нормализацию open web результата в evidence-объект.
+806. [x] Реализовать background job `open_web_research_job`.
 807. [ ] Реализовать open web fallback в оркестраторе при недостаточности нормативного покрытия.
-808. [ ] Реализовать unit-тесты на интеграцию с `SearXNG` и content extraction.
+808. [x] Реализовать unit-тесты на интеграцию с `SearXNG` и content extraction.
 809. [ ] Выполнить smoke-проверку open web fallback на одном запросе.
 
 ### Блок AM. Верификация, безопасность и изоляция сессий
 
-810. [ ] Создать файл `src/qanorm/services/qa/verification_service.py`.
-811. [ ] Создать файл `src/qanorm/security/guards.py`.
-812. [ ] Реализовать `citation_auditor` как гибридный `model-assisted` модуль с кодовыми проверками ссылок и локаторов.
-813. [ ] Реализовать проверку, что каждый существенный тезис привязан к evidence.
-814. [ ] Реализовать `coverage_auditor` как гибридный `model-assisted` модуль проверки полноты покрытия вопроса.
-815. [ ] Реализовать сравнение покрытия ответа с аспектами пользовательского вопроса.
-816. [ ] Реализовать `hallucination_guard` как гибридный `model-assisted` модуль supportedness-проверки утверждений.
-817. [ ] Реализовать отклонение или маркировку неподтвержденных нормативных утверждений.
-818. [ ] Реализовать классификацию verification findings на исправимые и неисправимые.
-819. [ ] Реализовать bounded `repair loop` для исправимых замечаний verification layer.
-820. [ ] Реализовать лимиты `max_verification_retries`, `max_total_attempts`, `max_tool_calls`, `max_time_budget`.
-821. [ ] Реализовать остановку repair loop при неизменном `evidence set`.
-822. [ ] Реализовать остановку repair loop при повторяющемся fingerprint verification findings.
-823. [ ] Реализовать деградацию к честно размеченному ограниченному ответу при неустранимых или повторяющихся замечаниях.
-824. [ ] Реализовать validator корректной маркировки источников `normative`, `trusted_web`, `open_web`.
-825. [ ] Реализовать `safety_guard` для пользовательского ввода.
-826. [ ] Реализовать `safety_guard` для retrieved-контента и web-источников.
-827. [ ] Реализовать sanitation pipeline перед включением внешнего текста в prompt.
-828. [ ] Реализовать tool policy enforcement и лимиты на число вызовов инструментов.
-829. [ ] Реализовать guards изоляции сессий для кэшей, worker-ов и временных артефактов.
-830. [ ] Реализовать сохранение `verification_reports`.
-831. [ ] Реализовать сохранение `security_events`.
-832. [ ] Реализовать стратегию блокировки или предупреждения при security violation.
-833. [ ] Реализовать unit-тесты на verification layer.
+810. [x] Создать файл `src/qanorm/services/qa/verification_service.py`.
+811. [x] Создать файл `src/qanorm/security/guards.py`.
+812. [x] Реализовать `citation_auditor` как гибридный `model-assisted` модуль с кодовыми проверками ссылок и локаторов.
+813. [x] Реализовать проверку, что каждый существенный тезис привязан к evidence.
+814. [x] Реализовать `coverage_auditor` как гибридный `model-assisted` модуль проверки полноты покрытия вопроса.
+815. [x] Реализовать сравнение покрытия ответа с аспектами пользовательского вопроса.
+816. [x] Реализовать `hallucination_guard` как гибридный `model-assisted` модуль supportedness-проверки утверждений.
+817. [x] Реализовать отклонение или маркировку неподтвержденных нормативных утверждений.
+818. [x] Реализовать классификацию verification findings на исправимые и неисправимые.
+819. [x] Реализовать bounded `repair loop` для исправимых замечаний verification layer.
+820. [x] Реализовать лимиты `max_verification_retries`, `max_total_attempts`, `max_tool_calls`, `max_time_budget`.
+821. [x] Реализовать остановку repair loop при неизменном `evidence set`.
+822. [x] Реализовать остановку repair loop при повторяющемся fingerprint verification findings.
+823. [x] Реализовать деградацию к честно размеченному ограниченному ответу при неустранимых или повторяющихся замечаниях.
+824. [x] Реализовать validator корректной маркировки источников `normative`, `trusted_web`, `open_web`.
+825. [x] Реализовать `safety_guard` для пользовательского ввода.
+826. [x] Реализовать `safety_guard` для retrieved-контента и web-источников.
+827. [x] Реализовать sanitation pipeline перед включением внешнего текста в prompt.
+828. [x] Реализовать tool policy enforcement и лимиты на число вызовов инструментов.
+829. [x] Реализовать guards изоляции сессий для кэшей, worker-ов и временных артефактов.
+830. [x] Реализовать сохранение `verification_reports`.
+831. [x] Реализовать сохранение `security_events`.
+832. [x] Реализовать стратегию блокировки или предупреждения при security violation.
+833. [x] Реализовать unit-тесты на verification layer.
 834. [ ] Реализовать интеграционный тест bounded repair loop с исправимым замечанием.
 835. [ ] Реализовать интеграционный тест bounded repair loop с остановкой по отсутствию улучшения.
 836. [ ] Реализовать adversarial-тесты на prompt injection через пользовательский ввод.

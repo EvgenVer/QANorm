@@ -16,7 +16,9 @@ from redis import asyncio as redis_asyncio
 
 from qanorm.db.session import session_scope
 from qanorm.services.qa.freshness_service import evaluate_freshness_check, queue_refresh_for_freshness_check
+from qanorm.services.qa.open_web_service import normalize_open_web_results_to_evidence, search_open_web
 from qanorm.services.qa.session_service import SessionService
+from qanorm.services.qa.trusted_sources_service import sync_trusted_source
 from qanorm.settings import get_qa_config, get_settings
 
 
@@ -180,6 +182,68 @@ async def document_refresh_job(ctx: dict[str, Any], payload: dict[str, Any]) -> 
     return result.to_payload()
 
 
+async def trusted_source_sync_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    """Synchronize one configured trusted-source adapter into the local store."""
+
+    settings = get_settings()
+    domain = str(payload["source_domain"]).strip().lower()
+    adapter = next((item for item in settings.trusted_sources.sources if item.domain.lower() == domain), None)
+    if adapter is None:
+        raise ValueError(f"Trusted source adapter not found for domain: {domain}")
+
+    with session_scope() as session:
+        result = sync_trusted_source(session, adapter=adapter)
+    return {
+        "sync_run_id": str(result.sync_run_id),
+        "source_domain": result.source_domain,
+        "discovered_url_count": result.discovered_url_count,
+        "indexed_document_count": result.indexed_document_count,
+    }
+
+
+async def open_web_research_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    """Run one open-web search request and normalize the fetched evidence payload."""
+
+    query_id = UUID(str(payload["query_id"])) if payload.get("query_id") else None
+    subtask_id = UUID(str(payload["subtask_id"])) if payload.get("subtask_id") else None
+    query_text = str(payload["query_text"])
+    limit = int(payload.get("limit", get_settings().qa.search.open_web_max_results))
+    allowed_domains = [str(item).strip() for item in payload.get("allowed_domains", []) if str(item).strip()]
+    with session_scope() as session:
+        results = await search_open_web(
+            session,
+            query_id=query_id,
+            subtask_id=subtask_id,
+            query_text=query_text,
+            allowed_domains=allowed_domains,
+            limit=limit,
+        )
+        evidence = (
+            normalize_open_web_results_to_evidence(
+                query_id=query_id,
+                subtask_id=subtask_id,
+                results=results,
+            )
+            if query_id is not None
+            else []
+        )
+    return {
+        "query_text": query_text,
+        "result_count": len(results),
+        "results": [
+            {
+                "title": item.title,
+                "url": item.url,
+                "snippet": item.snippet,
+                "engine": item.engine,
+                "score": item.score,
+            }
+            for item in results
+        ],
+        "evidence_count": len(evidence),
+    }
+
+
 class Stage2WorkerSettings:
     """ARQ worker settings for the Stage 2 runtime."""
 
@@ -190,6 +254,8 @@ class Stage2WorkerSettings:
         cleanup_expired_sessions_job,
         freshness_check_job,
         document_refresh_job,
+        trusted_source_sync_job,
+        open_web_research_job,
     ]
     queue_name = "arq:queue"
     max_jobs = 10

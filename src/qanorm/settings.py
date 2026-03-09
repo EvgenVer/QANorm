@@ -120,6 +120,8 @@ class SearchRuntimeConfig(BaseModel):
 
     open_web_provider: OpenWebProvider = "searxng"
     open_web_max_results: int = Field(default=5, gt=0)
+    open_web_request_timeout_seconds: int = Field(default=15, gt=0)
+    open_web_user_agent: str = Field(default="QANorm-SearXNG/1.0", min_length=1)
     trusted_domains: list[str] = Field(default_factory=list)
 
 
@@ -133,6 +135,24 @@ class QAFileConfig(BaseModel):
     search: SearchRuntimeConfig
 
 
+class TrustedSourceAdapterConfig(BaseModel):
+    """One allowlisted trusted-source adapter definition."""
+
+    domain: str = Field(min_length=1)
+    sitemap_urls: list[str] = Field(default_factory=list)
+    seed_urls: list[str] = Field(default_factory=list)
+    allowed_prefixes: list[str] = Field(default_factory=list)
+    max_documents_per_sync: int = Field(default=100, gt=0)
+    chunk_size_chars: int = Field(default=1600, gt=0)
+    chunk_overlap_chars: int = Field(default=200, ge=0)
+
+
+class TrustedSourcesFileConfig(BaseModel):
+    """Allowlisted trusted-source adapters loaded from dedicated config."""
+
+    sources: list[TrustedSourceAdapterConfig] = Field(default_factory=list)
+
+
 class RuntimeConfig(BaseModel):
     """Normalized runtime configuration bundle."""
 
@@ -141,6 +161,7 @@ class RuntimeConfig(BaseModel):
     sources: SourcesConfig
     statuses: StatusesConfig
     qa: QAFileConfig
+    trusted_sources: TrustedSourcesFileConfig
 
 
 REMOTE_PROVIDER_ENV_FIELDS: dict[str, str] = {
@@ -213,6 +234,15 @@ def load_qa_file_config(config_dir: Path = DEFAULT_CONFIG_DIR) -> QAFileConfig:
     return QAFileConfig.model_validate(payload["qa"])
 
 
+def load_trusted_sources_file_config(config_dir: Path = DEFAULT_CONFIG_DIR) -> TrustedSourcesFileConfig:
+    """Load and validate trusted_sources.yaml."""
+
+    payload = _load_yaml_file(config_dir / "trusted_sources.yaml")
+    if "trusted_sources" not in payload:
+        raise ValueError("configs/trusted_sources.yaml must contain a 'trusted_sources' section")
+    return TrustedSourcesFileConfig.model_validate(payload["trusted_sources"])
+
+
 def _validate_stage_two_environment(env: EnvironmentSettings, qa: QAFileConfig) -> None:
     """Validate Stage 2 settings that depend on both YAML and environment values."""
 
@@ -263,8 +293,23 @@ def load_runtime_config(config_dir: Path = DEFAULT_CONFIG_DIR) -> RuntimeConfig:
     sources = load_sources_config(config_dir=config_dir)
     statuses = load_statuses_config(config_dir=config_dir)
     qa = load_qa_file_config(config_dir=config_dir)
+    trusted_sources = load_trusted_sources_file_config(config_dir=config_dir)
+    trusted_domains = sorted(
+        {
+            *qa.search.trusted_domains,
+            *(item.domain for item in trusted_sources.sources),
+        }
+    )
+    qa.search.trusted_domains = trusted_domains
     _validate_stage_two_environment(env=env, qa=qa)
-    return RuntimeConfig(env=env, app=app, sources=sources, statuses=statuses, qa=qa)
+    return RuntimeConfig(
+        env=env,
+        app=app,
+        sources=sources,
+        statuses=statuses,
+        qa=qa,
+        trusted_sources=trusted_sources,
+    )
 
 
 @lru_cache(maxsize=1)
@@ -279,6 +324,13 @@ def get_qa_config() -> QAFileConfig:
     """Return cached Stage 2 file configuration."""
 
     return load_qa_file_config()
+
+
+@lru_cache(maxsize=1)
+def get_trusted_sources_config() -> TrustedSourcesFileConfig:
+    """Return cached trusted-source adapter configuration."""
+
+    return load_trusted_sources_file_config()
 
 
 @lru_cache(maxsize=1)

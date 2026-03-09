@@ -14,9 +14,11 @@ from qanorm.workers.stage2 import (
     create_redis_client,
     document_refresh_job,
     freshness_check_job,
+    open_web_research_job,
     publish_progress_event,
     qa_noop_job,
     session_lock,
+    trusted_source_sync_job,
 )
 from qanorm.workers.bootstrap import run_stage2_worker
 
@@ -34,8 +36,10 @@ __all__ = [
     "create_redis_client",
     "document_refresh_job",
     "freshness_check_job",
+    "open_web_research_job",
     "publish_progress_event",
     "qa_noop_job",
     "run_stage2_worker",
     "session_lock",
+    "trusted_source_sync_job",
 ]

@@ -26,6 +26,7 @@ from qanorm.settings import (
     SourcesConfig,
     StatusesConfig,
     TelegramRuntimeConfig,
+    TrustedSourcesFileConfig,
     WebRuntimeConfig,
 )
 
@@ -71,6 +72,7 @@ def _runtime_config(*, prompt_dir: Path | None = None) -> RuntimeConfig:
         sources=SourcesConfig(seed_urls=["https://example.com"]),
         statuses=StatusesConfig(active=["active"], inactive=["inactive"]),
         qa=qa_config,
+        trusted_sources=TrustedSourcesFileConfig(sources=[]),
     )
 
 

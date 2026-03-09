@@ -9,12 +9,15 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 
+from qanorm.db.session import session_scope
 from qanorm.indexing.indexer import reindex
 from qanorm.jobs.worker import run_worker_loop
 from qanorm.services.health import get_health_report
 from qanorm.services.ingestion import check_configuration, run_seed_crawl
 from qanorm.services.metrics import get_ingestion_metrics, get_ingestion_test_run_report
+from qanorm.services.qa.trusted_sources_service import sync_trusted_source
 from qanorm.services.refresh_service import request_document_refresh, run_document_refresh
+from qanorm.settings import get_settings
 
 
 def _build_alembic_config() -> Config:
@@ -49,6 +52,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     update_parser = subparsers.add_parser("update-document", help="Refresh one document immediately.")
     update_parser.add_argument("document_code", help="Canonical or display document code.")
+
+    trusted_sync_parser = subparsers.add_parser("sync-trusted-sources", help="Synchronize one or all trusted sources.")
+    trusted_sync_parser.add_argument("--domain", help="Optional allowlisted domain to sync.", default=None)
 
     return parser
 
@@ -97,6 +103,24 @@ def main() -> None:
 
     if args.command == "update-document":
         print(json.dumps(run_document_refresh(args.document_code), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "sync-trusted-sources":
+        settings = get_settings()
+        adapters = settings.trusted_sources.sources
+        if args.domain:
+            adapters = [item for item in adapters if item.domain == args.domain]
+        with session_scope() as session:
+            results = [
+                {
+                    "sync_run_id": str(result.sync_run_id),
+                    "source_domain": result.source_domain,
+                    "discovered_url_count": result.discovered_url_count,
+                    "indexed_document_count": result.indexed_document_count,
+                }
+                for result in (sync_trusted_source(session, adapter=adapter) for adapter in adapters)
+            ]
+        print(json.dumps(results, ensure_ascii=False, indent=2))
         return
 
     parser.print_help()

@@ -29,6 +29,7 @@ from qanorm.providers.lmstudio import LMStudioProvider
 from qanorm.providers.ollama import OllamaProvider
 from qanorm.providers.openai import OpenAIProvider
 from qanorm.providers.qwen import QwenProvider
+from qanorm.providers.searxng import SearXNGProvider
 from qanorm.providers.vllm import VLLMProvider
 
 
@@ -70,6 +71,7 @@ __all__ = [
     "RerankerProvider",
     "RerankRequest",
     "RerankResponse",
+    "SearXNGProvider",
     "ROLE_REQUIREMENTS",
     "VLLMProvider",
     "create_provider_registry",

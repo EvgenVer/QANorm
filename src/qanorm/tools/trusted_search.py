@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
-
-from qanorm.db.types import SearchScope, SearchStatus
-from qanorm.models import QAQuery, SearchEvent, TrustedSourceChunk, TrustedSourceDocument
-from qanorm.repositories import SearchEventRepository
+from qanorm.models import QAQuery
+from qanorm.services.qa.trusted_sources_service import normalize_trusted_hits_to_evidence, search_trusted_sources
 from qanorm.tools.base import Tool, ToolDefinition, ToolExecutionContext, ToolInputError, ToolResult
 
 
@@ -30,46 +27,34 @@ class TrustedSearchTool(Tool):
 
         limit = max(1, min(int(payload.get("limit", 5)), 20))
         allowed_domains = [str(item).strip() for item in payload.get("allowed_domains", []) if str(item).strip()]
-        pattern = f"%{query_text}%"
-
-        stmt = (
-            select(TrustedSourceChunk, TrustedSourceDocument)
-            .join(TrustedSourceDocument, TrustedSourceChunk.document_id == TrustedSourceDocument.id)
-            .where(TrustedSourceChunk.text.ilike(pattern))
-            .order_by(TrustedSourceChunk.created_at.desc())
+        hits = search_trusted_sources(
+            context.session,
+            query_id=context.query_id,
+            subtask_id=context.subtask_id,
+            query_text=query_text,
+            allowed_domains=allowed_domains or None,
+            limit=limit,
         )
-        if allowed_domains:
-            stmt = stmt.where(TrustedSourceDocument.source_domain.in_(allowed_domains))
-        rows = context.session.execute(stmt.limit(limit)).all()
-
         results = [
             {
-                "chunk_id": str(chunk.id),
-                "document_id": str(document.id),
-                "source_domain": document.source_domain,
-                "source_url": document.source_url,
-                "title": document.title,
-                "locator": chunk.locator,
-                "text": chunk.text,
+                "chunk_id": str(hit.chunk_id),
+                "document_id": str(hit.document_id),
+                "source_domain": hit.source_domain,
+                "source_url": hit.source_url,
+                "title": hit.title,
+                "locator": hit.locator,
+                "text": hit.text,
+                "score": hit.score,
             }
-            for chunk, document in rows
+            for hit in hits
         ]
-
-        SearchEventRepository(context.session).add(
-            SearchEvent(
-                query_id=context.query_id,
-                subtask_id=context.subtask_id,
-                provider_name="trusted_sources",
-                search_scope=SearchScope.TRUSTED_WEB,
-                query_text=query_text,
-                allowed_domains=allowed_domains or None,
-                result_count=len(results),
-                status=SearchStatus.COMPLETED,
-            )
-        )
         self._mark_query_usage(context)
         return ToolResult(
-            payload={"query_text": query_text, "results": results},
+            payload={
+                "query_text": query_text,
+                "results": results,
+                "evidence": [row.quote for row in normalize_trusted_hits_to_evidence(query_id=context.query_id, hits=hits)],
+            },
             summary=f"Trusted-source search returned {len(results)} results.",
             metadata={"result_count": len(results)},
         )
