@@ -10,6 +10,7 @@ import re
 from redis import asyncio as redis_asyncio
 from sqlalchemy.orm import Session
 
+from qanorm.agents.planner.query_intent import QueryIntent
 from qanorm.agents.planner import PlannedSubtask, QueryAnalysis, QueryAnalyzer, QueryTaskDecomposer
 from qanorm.audit import AuditWriter
 from qanorm.db.types import QueryStatus, SubtaskStatus
@@ -135,6 +136,9 @@ class QueryOrchestrator:
             "analysis_completed",
             {
                 "query_type": analysis.query_type,
+                "intent": analysis.intent.value,
+                "retrieval_mode": analysis.retrieval_mode.value,
+                "clarification_required": analysis.clarification_required,
                 "complexity": analysis.complexity.value,
                 "used_fallback": analysis.used_fallback,
             },
@@ -145,8 +149,9 @@ class QueryOrchestrator:
             planned_subtasks = self.task_decomposer.fallback_subtasks(state.query_text, analysis)
         self._ensure_routes_supported(planned_subtasks)
         persisted = self._persist_subtasks(query=query, state=state, planned_subtasks=planned_subtasks)
-        query.status = QueryStatus.RETRIEVING
-        persisted.status = QueryStatus.RETRIEVING
+        next_status = QueryStatus.SYNTHESIZING if analysis.intent in {QueryIntent.CLARIFY, QueryIntent.NO_RETRIEVAL} else QueryStatus.RETRIEVING
+        query.status = next_status
+        persisted.status = next_status
         self.session.flush()
         self._record_transition(
             query=query,
@@ -154,7 +159,7 @@ class QueryOrchestrator:
             payload={
                 "subtask_count": len(planned_subtasks),
                 "routes": [task.route for task in planned_subtasks],
-                "status": QueryStatus.RETRIEVING.value,
+                "status": next_status.value,
             },
         )
         await self._publish(
@@ -163,7 +168,7 @@ class QueryOrchestrator:
             {
                 "subtask_count": len(planned_subtasks),
                 "routes": [task.route for task in planned_subtasks],
-                "status": QueryStatus.RETRIEVING.value,
+                "status": next_status.value,
             },
         )
         return QueryPlanningResult(state=persisted, analysis=analysis, planned_subtasks=planned_subtasks)
@@ -278,6 +283,11 @@ class QueryOrchestrator:
             status=query.status,
             query_type=query.query_type,
             session_summary=prompt_context.session_summary,
+            intent=query.intent,
+            retrieval_mode=query.retrieval_mode,
+            clarification_required=query.clarification_required,
+            document_hints=list(query.document_hints or []),
+            locator_hints=list(query.locator_hints or []),
             recent_messages=prompt_context.recent_messages,
         )
 
@@ -285,14 +295,28 @@ class QueryOrchestrator:
         """Write the analysis output into query state and durable query flags."""
 
         state.query_type = analysis.query_type
+        state.intent = analysis.intent.value
+        state.retrieval_mode = analysis.retrieval_mode.value
+        state.clarification_required = analysis.clarification_required
+        state.clarification_question = analysis.clarification_question
+        state.document_hints = list(analysis.document_hints)
+        state.locator_hints = list(analysis.locator_hints)
+        state.subject = analysis.subject
+        state.engineering_aspects = list(analysis.engineering_aspects)
+        state.constraints = list(analysis.constraints)
         state.requires_freshness_check = analysis.requires_freshness_check
-        state.used_trusted_web = analysis.requires_trusted_web
+        state.used_trusted_web = False
         state.open_web_fallback_allowed = analysis.requires_open_web
         state.used_open_web = False
 
         query.query_type = analysis.query_type
+        query.intent = analysis.intent.value
+        query.clarification_required = analysis.clarification_required
+        query.document_hints = list(analysis.document_hints)
+        query.locator_hints = list(analysis.locator_hints)
+        query.retrieval_mode = analysis.retrieval_mode.value
         query.requires_freshness_check = analysis.requires_freshness_check
-        query.used_trusted_web = analysis.requires_trusted_web
+        query.used_trusted_web = False
         query.used_open_web = False
         self.session.flush()
 

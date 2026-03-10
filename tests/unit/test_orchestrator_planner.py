@@ -7,7 +7,16 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 from qanorm.agents.orchestrator import QueryOrchestrator
-from qanorm.agents.planner import PlannedSubtask, QueryAnalysis, QueryAnalyzer, QueryComplexity, QueryTaskDecomposer
+from qanorm.agents.planner import (
+    PlannedSubtask,
+    QueryAnalysis,
+    QueryAnalyzer,
+    QueryComplexity,
+    QueryIntent,
+    QueryTaskDecomposer,
+    RetrievalMode,
+)
+from qanorm.agents.planner.query_intent import infer_query_intent
 from qanorm.db.types import EvidenceSourceKind, MessageRole, QueryStatus, SessionChannel, SessionStatus, SubtaskStatus
 from qanorm.models import QAEvidence, QAMessage, QAQuery, QASession
 from qanorm.models.qa_state import EvidenceBundle, PromptRenderContext
@@ -114,10 +123,16 @@ def test_query_analyzer_parses_model_json_response() -> None:
         {
           "query_type": "mixed",
           "complexity": "multi_aspect",
-          "requires_normative_retrieval": true,
+          "intent": "mixed_retrieval",
+          "retrieval_mode": "mixed",
+          "clarification_required": false,
+          "clarification_question": null,
           "requires_freshness_check": true,
           "requires_trusted_web": true,
           "requires_open_web": false,
+          "document_hints": ["СП 1.13130"],
+          "locator_hints": ["п. 4.2"],
+          "subject": "пожарная безопасность и эвакуация жилого дома",
           "engineering_aspects": ["fire safety", "evacuation"],
           "constraints": ["for residential building"],
           "assumptions": ["RF jurisdiction"]
@@ -131,8 +146,13 @@ def test_query_analyzer_parses_model_json_response() -> None:
 
     assert analysis.query_type == "mixed"
     assert analysis.complexity == QueryComplexity.MULTI_ASPECT
+    assert analysis.intent == QueryIntent.MIXED_RETRIEVAL
+    assert analysis.retrieval_mode == RetrievalMode.MIXED
     assert analysis.requires_trusted_web is True
-    assert analysis.engineering_aspects == ["fire safety", "evacuation"]
+    assert analysis.document_hints == ["СП 1.13130"]
+    assert analysis.locator_hints == ["п. 4.2"]
+    assert "fire safety" in analysis.engineering_aspects
+    assert "evacuation" in analysis.engineering_aspects
     assert analysis.used_fallback is False
 
 
@@ -148,8 +168,24 @@ def test_query_analyzer_uses_deterministic_fallback_for_invalid_model_output() -
 
     assert analysis.used_fallback is True
     assert analysis.requires_normative_retrieval is True
+    assert analysis.intent == QueryIntent.MIXED_RETRIEVAL
     assert analysis.requires_open_web is True
     assert analysis.requires_freshness_check is True
+
+
+def test_query_analyzer_routes_underspecified_document_reference_to_clarify() -> None:
+    analyzer = QueryAnalyzer(
+        runtime_config=_runtime_config(),
+        prompt_registry=create_prompt_registry(_runtime_config()),
+        provider=_FakeChatProvider("not-json"),
+    )
+
+    analysis = asyncio.run(analyzer.analyze(_build_query_state("СП 63")))
+
+    assert analysis.intent == QueryIntent.CLARIFY
+    assert analysis.clarification_required is True
+    assert analysis.clarification_question is not None
+    assert analysis.document_hints == ["СП 63"]
 
 
 def test_task_decomposer_routes_all_required_sources() -> None:
@@ -161,7 +197,9 @@ def test_task_decomposer_routes_all_required_sources() -> None:
     analysis = QueryAnalysis(
         query_type="mixed",
         complexity=QueryComplexity.COMPLEX,
-        requires_normative_retrieval=True,
+        intent=QueryIntent.MIXED_RETRIEVAL,
+        retrieval_mode=RetrievalMode.MIXED,
+        clarification_required=False,
         requires_freshness_check=True,
         requires_trusted_web=True,
         requires_open_web=True,
@@ -172,6 +210,29 @@ def test_task_decomposer_routes_all_required_sources() -> None:
 
     assert [task.route for task in tasks] == ["normative", "freshness", "trusted_web", "open_web"]
     assert [task.priority for task in tasks] == [10, 20, 30, 40]
+
+
+def test_task_decomposer_returns_no_subtasks_for_clarify_intent() -> None:
+    decomposer = QueryTaskDecomposer(
+        runtime_config=_runtime_config(),
+        prompt_registry=create_prompt_registry(_runtime_config()),
+        provider=_FakeChatProvider("not-json"),
+    )
+    analysis = QueryAnalysis(
+        query_type="consultative",
+        complexity=QueryComplexity.SIMPLE,
+        intent=QueryIntent.CLARIFY,
+        retrieval_mode=RetrievalMode.CLARIFY,
+        clarification_required=True,
+        requires_freshness_check=False,
+        requires_trusted_web=False,
+        requires_open_web=False,
+        clarification_question="Уточните документ.",
+    )
+
+    tasks = asyncio.run(decomposer.decompose(_build_query_state("СП 63"), analysis))
+
+    assert tasks == []
 
 
 def test_query_orchestrator_persists_subtasks_records_audit_and_publishes_progress() -> None:
@@ -198,11 +259,15 @@ def test_query_orchestrator_persists_subtasks_records_audit_and_publishes_progre
                 QueryAnalysis(
                     query_type="mixed",
                     complexity=QueryComplexity.MULTI_ASPECT,
-                    requires_normative_retrieval=True,
+                    intent=QueryIntent.MIXED_RETRIEVAL,
+                    retrieval_mode=RetrievalMode.MIXED,
+                    clarification_required=False,
                     requires_freshness_check=True,
                     requires_trusted_web=False,
                     requires_open_web=True,
                     engineering_aspects=["requirements", "external validation"],
+                    document_hints=["СП 20"],
+                    locator_hints=["п. 5.1"],
                 )
             )
         ),
@@ -227,6 +292,10 @@ def test_query_orchestrator_persists_subtasks_records_audit_and_publishes_progre
 
     assert query.status == QueryStatus.RETRIEVING
     assert query.query_type == "mixed"
+    assert query.intent == QueryIntent.MIXED_RETRIEVAL.value
+    assert query.retrieval_mode == RetrievalMode.MIXED.value
+    assert query.document_hints == ["СП 20"]
+    assert query.locator_hints == ["п. 5.1"]
     assert query.requires_freshness_check is True
     assert query.used_open_web is False
     assert [row.subtask_type for row in subtask_repository.rows] == [
@@ -254,6 +323,53 @@ def test_query_orchestrator_persists_subtasks_records_audit_and_publishes_progre
         "analysis_completed",
         "planning_completed",
     ]
+
+
+def test_query_orchestrator_routes_clarify_without_retrieval_subtasks() -> None:
+    query = QAQuery(
+        id=uuid4(),
+        session_id=uuid4(),
+        message_id=uuid4(),
+        query_text="СП 63",
+        status=QueryStatus.PENDING,
+    )
+    orchestrator = QueryOrchestrator(
+        MagicMock(),
+        tool_registry=_build_tool_registry(),
+        runtime_config=_runtime_config(),
+        query_analyzer=SimpleNamespace(
+            analyze=_async_return(
+                QueryAnalysis(
+                    query_type="consultative",
+                    complexity=QueryComplexity.SIMPLE,
+                    intent=QueryIntent.CLARIFY,
+                    retrieval_mode=RetrievalMode.CLARIFY,
+                    clarification_required=True,
+                    clarification_question="Уточните, что именно нужно проверить по СП 63.",
+                    requires_freshness_check=False,
+                    requires_trusted_web=False,
+                    requires_open_web=False,
+                    document_hints=["СП 63"],
+                )
+            )
+        ),
+        task_decomposer=SimpleNamespace(
+            decompose=_async_return([]),
+            fallback_subtasks=lambda query_text, analysis: [],
+        ),
+        context_service=_ContextServiceStub(query.session_id, query.id, query.query_text),
+        query_repository=_InMemoryQueryRepository(query),
+        subtask_repository=_InMemorySubtaskRepository(),
+        audit_repository=_InMemoryAuditRepository(),
+    )
+
+    result = asyncio.run(orchestrator.analyze_and_plan(query_id=query.id))
+
+    assert query.status == QueryStatus.SYNTHESIZING
+    assert result.planned_subtasks == []
+    assert result.state.intent == QueryIntent.CLARIFY.value
+    assert result.state.clarification_required is True
+    assert result.state.clarification_question is not None
 
 
 def test_query_orchestrator_schedules_open_web_fallback_only_after_insufficient_coverage() -> None:
@@ -454,6 +570,15 @@ def _build_runtime_state(query: QAQuery):
             "status": query.status,
             "query_type": query.query_type,
             "session_summary": None,
+            "intent": None,
+            "retrieval_mode": None,
+            "clarification_required": False,
+            "clarification_question": None,
+            "document_hints": [],
+            "locator_hints": [],
+            "subject": None,
+            "engineering_aspects": [],
+            "constraints": [],
             "recent_messages": [],
             "subtasks": [],
             "evidence_bundle": EvidenceBundle(),

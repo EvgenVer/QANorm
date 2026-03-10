@@ -14,6 +14,7 @@ from arq import ArqRedis, create_pool
 from arq.connections import RedisSettings
 from redis import asyncio as redis_asyncio
 
+from qanorm.agents.planner.query_intent import QueryIntent
 from qanorm.db.session import session_scope
 from qanorm.db.types import QueryStatus, SubtaskStatus
 from qanorm.models import QAQuery
@@ -283,6 +284,8 @@ async def process_query_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dic
             limitations: list[str] = []
             if not state.evidence_bundle.all_items:
                 limitations.append("No evidence was found for this query in the currently available sources.")
+            if state.intent == QueryIntent.NO_RETRIEVAL.value:
+                limitations.append("The request was intentionally stopped before retrieval because it is outside the normative retrieval path.")
             answer = await synthesizer.synthesize(state, limitations=limitations)
             synthesizer.persist_answer(query=query, answer=answer)
             await publish_progress_event(

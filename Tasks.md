@@ -1083,17 +1083,17 @@
 
 Примечание: блоки `AG-AJ` построили базовый pipeline. Блоки `AQ-AU` являются обязательным redesign-пакетом, который заменяет слабую логику «почти всегда запускать retrieval по всему корпусу» на document-aware pipeline с clarify/no-retrieval path.
 
-908. [ ] Создать файл `src/qanorm/agents/planner/query_intent.py`.
-909. [ ] Зафиксировать типизированный результат intent gate с исходами `clarify`, `no_retrieval`, `normative_retrieval`, `mixed_retrieval`.
-910. [ ] Расширить `QueryState` и/или `qa_query` полями для `intent`, `clarification_required`, `document_hints`, `locator_hints`, `retrieval_mode`.
-911. [ ] Реализовать извлечение `document-code hints`, `locator hints`, предмета, аспекта и ограничений из пользовательского запроса.
-912. [ ] Реализовать базовые эвристики для распознавания мусорных, слишком общих и недостаточно определенных запросов до запуска retrieval.
-913. [ ] Обновить prompt и парсер `query_analyzer` так, чтобы модель возвращала решение intent gate, а не только общую классификацию вопроса.
-914. [ ] Реализовать исход `clarify` для неясных и неоднозначных запросов без запуска дорогого retrieval.
-915. [ ] Реализовать исход `no_retrieval` для запросов, которые не требуют нормативного поиска либо требуют честного ограниченного ответа.
-916. [ ] Реализовать генерацию уточняющего вопроса пользователю вместо шумного ответа.
-917. [ ] Подключить `clarify/no_retrieval` path в оркестратор до запуска normative, trusted и open-web веток.
-918. [ ] Реализовать unit-тесты на intent gate, извлечение hints и маршруты `clarify/no_retrieval`.
+908. [x] Создать файл `src/qanorm/agents/planner/query_intent.py`.
+909. [x] Зафиксировать типизированный результат intent gate с исходами `clarify`, `no_retrieval`, `normative_retrieval`, `mixed_retrieval`.
+910. [x] Расширить `QueryState` и/или `qa_query` полями для `intent`, `clarification_required`, `document_hints`, `locator_hints`, `retrieval_mode`.
+911. [x] Реализовать извлечение `document-code hints`, `locator hints`, предмета, аспекта и ограничений из пользовательского запроса.
+912. [x] Реализовать базовые эвристики для распознавания мусорных, слишком общих и недостаточно определенных запросов до запуска retrieval.
+913. [x] Обновить prompt и парсер `query_analyzer` так, чтобы модель возвращала решение intent gate, а не только общую классификацию вопроса.
+914. [x] Реализовать исход `clarify` для неясных и неоднозначных запросов без запуска дорогого retrieval.
+915. [x] Реализовать исход `no_retrieval` для запросов, которые не требуют нормативного поиска либо требуют честного ограниченного ответа.
+916. [x] Реализовать генерацию уточняющего вопроса пользователю вместо шумного ответа.
+917. [x] Подключить `clarify/no_retrieval` path в оркестратор до запуска normative, trusted и open-web веток.
+918. [x] Реализовать unit-тесты на intent gate, извлечение hints и маршруты `clarify/no_retrieval`.
 
 ### Блок AR. Redesign: document resolution и scoped normative retrieval
 

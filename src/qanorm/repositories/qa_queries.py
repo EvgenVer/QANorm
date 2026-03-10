@@ -36,6 +36,11 @@ class QAQueryRepository:
         *,
         status: QueryStatus,
         finished_at: datetime | None = None,
+        intent: str | None = None,
+        clarification_required: bool | None = None,
+        document_hints: list[str] | None = None,
+        locator_hints: list[str] | None = None,
+        retrieval_mode: str | None = None,
         requires_freshness_check: bool | None = None,
         used_open_web: bool | None = None,
         used_trusted_web: bool | None = None,
@@ -45,6 +50,16 @@ class QAQueryRepository:
         query.status = status
         if finished_at is not None:
             query.finished_at = finished_at
+        if intent is not None:
+            query.intent = intent
+        if clarification_required is not None:
+            query.clarification_required = clarification_required
+        if document_hints is not None:
+            query.document_hints = document_hints
+        if locator_hints is not None:
+            query.locator_hints = locator_hints
+        if retrieval_mode is not None:
+            query.retrieval_mode = retrieval_mode
         if requires_freshness_check is not None:
             query.requires_freshness_check = requires_freshness_check
         if used_open_web is not None:

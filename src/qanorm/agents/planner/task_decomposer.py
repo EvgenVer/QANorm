@@ -7,6 +7,7 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from qanorm.agents.planner.query_intent import QueryIntent
 from qanorm.agents.planner.query_analyzer import JSON_OBJECT_RE, QueryAnalysis, QueryComplexity
 from qanorm.models.qa_state import QueryState
 from qanorm.prompts.registry import PromptRegistry, create_prompt_registry
@@ -132,6 +133,9 @@ class QueryTaskDecomposer:
 
     def fallback_subtasks(self, query_text: str, analysis: QueryAnalysis) -> list[PlannedSubtask]:
         """Deterministic decomposition aligned to the agreed source precedence."""
+
+        if analysis.intent in {QueryIntent.CLARIFY, QueryIntent.NO_RETRIEVAL}:
+            return []
 
         tasks: list[PlannedSubtask] = []
         summary = _summarize_query(query_text)

@@ -4,6 +4,7 @@ import asyncio
 from uuid import uuid4
 
 from qanorm.agents.answer_synthesizer import AnswerSynthesizer
+from qanorm.agents.planner import QueryIntent
 from qanorm.db.types import CoverageStatus, EvidenceSourceKind, FreshnessStatus, MessageRole, QueryStatus
 from qanorm.models import Document, QAEvidence, QAMessage, QAQuery
 from qanorm.models.qa_state import EvidenceBundle, QueryState
@@ -148,6 +149,58 @@ def test_answer_synthesizer_prompt_render_snapshot_contains_shared_policies() ->
     assert "You synthesize the final engineering answer from collected evidence." in prompt.text
     assert "Prefer normative evidence and cite it explicitly." in prompt.text
     assert "Mark non-normative information as requiring user verification." in prompt.text
+
+
+def test_answer_synthesizer_short_circuits_clarify_path() -> None:
+    synthesizer = AnswerSynthesizer(
+        session=None,  # type: ignore[arg-type]
+        runtime_config=_runtime_config(),
+        prompt_registry=create_prompt_registry(_runtime_config()),
+        provider=_FakeChatProvider("unused"),
+        answer_repository=_AnswerRepositoryStub(),
+        message_repository=_MessageRepositoryStub(),
+        query_repository=_QueryRepositoryStub(),
+    )
+    state = QueryState(
+        session_id=uuid4(),
+        query_id=uuid4(),
+        message_id=uuid4(),
+        query_text="СП 63",
+        intent=QueryIntent.CLARIFY.value,
+        clarification_required=True,
+        clarification_question="Уточните, какой пункт СП 63 нужно проверить.",
+    )
+
+    answer = asyncio.run(synthesizer.synthesize(state))
+
+    assert answer.coverage_status == CoverageStatus.INSUFFICIENT
+    assert "Уточните" in answer.answer_text
+    assert answer.model_name == "intent_gate:clarify"
+
+
+def test_answer_synthesizer_short_circuits_no_retrieval_path() -> None:
+    synthesizer = AnswerSynthesizer(
+        session=None,  # type: ignore[arg-type]
+        runtime_config=_runtime_config(),
+        prompt_registry=create_prompt_registry(_runtime_config()),
+        provider=_FakeChatProvider("unused"),
+        answer_repository=_AnswerRepositoryStub(),
+        message_repository=_MessageRepositoryStub(),
+        query_repository=_QueryRepositoryStub(),
+    )
+    state = QueryState(
+        session_id=uuid4(),
+        query_id=uuid4(),
+        message_id=uuid4(),
+        query_text="Привет",
+        intent=QueryIntent.NO_RETRIEVAL.value,
+    )
+
+    answer = asyncio.run(synthesizer.synthesize(state))
+
+    assert answer.coverage_status == CoverageStatus.INSUFFICIENT
+    assert "не был отправлен в нормативный retrieval" in answer.answer_text
+    assert answer.model_name == "intent_gate:no_retrieval"
 
 
 def _build_query_state() -> QueryState:

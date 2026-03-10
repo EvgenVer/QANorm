@@ -5,8 +5,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Text, func, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from qanorm.db.base import Base
@@ -48,6 +48,21 @@ class QAQuery(Base):
         server_default=QueryStatus.PENDING.value,
     )
     query_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    intent: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    clarification_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    document_hints: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    locator_hints: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    retrieval_mode: Mapped[str | None] = mapped_column(String(64), nullable=True)
     requires_freshness_check: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     used_open_web: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     used_trusted_web: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

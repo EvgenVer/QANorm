@@ -131,6 +131,11 @@ class QueryDetailResponse(BaseModel):
     message_id: UUID
     status: str
     query_type: str | None = None
+    intent: str | None = None
+    clarification_required: bool = False
+    document_hints: list[str] = Field(default_factory=list)
+    locator_hints: list[str] = Field(default_factory=list)
+    retrieval_mode: str | None = None
     query_text: str
     requires_freshness_check: bool
     used_open_web: bool

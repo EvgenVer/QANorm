@@ -70,6 +70,15 @@ def test_query_state_build_prompt_context_copies_runtime_snapshot() -> None:
         message_id=uuid4(),
         query_text="hello",
         session_summary="summary",
+        intent="clarify",
+        retrieval_mode="clarify",
+        clarification_required=True,
+        clarification_question="Уточните документ.",
+        document_hints=["СП 63"],
+        locator_hints=["п. 8.3"],
+        subject="требования к колоннам",
+        engineering_aspects=["колонны"],
+        constraints=["для многоэтажного здания"],
         recent_messages=[message],
     )
 
@@ -77,6 +86,9 @@ def test_query_state_build_prompt_context_copies_runtime_snapshot() -> None:
 
     assert prompt_context.session_id == session_id
     assert prompt_context.session_summary == "summary"
+    assert prompt_context.intent == "clarify"
+    assert prompt_context.document_hints == ["СП 63"]
+    assert prompt_context.locator_hints == ["п. 8.3"]
     assert prompt_context.recent_messages == [message]
 
 

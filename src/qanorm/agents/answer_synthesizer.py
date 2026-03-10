@@ -12,6 +12,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from qanorm.audit import AuditWriter
+from qanorm.agents.planner.query_intent import QueryIntent
 from qanorm.db.types import AnswerStatus, CoverageStatus, EvidenceSourceKind, FreshnessStatus, MessageRole, QueryStatus
 from qanorm.models import QAAnswer, QAEvidence, QAMessage, QAQuery
 from qanorm.models.qa_state import EvidenceBundle, QueryState
@@ -139,6 +140,10 @@ class AnswerSynthesizer:
 
         assumptions_list = [item.strip() for item in (assumptions or []) if item.strip()]
         limitations_list = [item.strip() for item in (limitations or []) if item.strip()]
+        if state.intent == QueryIntent.CLARIFY.value:
+            return self._build_clarify_answer(state, limitations=limitations_list)
+        if state.intent == QueryIntent.NO_RETRIEVAL.value and not state.evidence_bundle.all_items:
+            return self._build_no_retrieval_answer(state, limitations=limitations_list)
         prompt = self.prompt_registry.render("answer_synthesizer", context=state.build_prompt_context())
         response_content = ""
         try:
@@ -194,6 +199,76 @@ class AnswerSynthesizer:
             warnings=warnings,
             sections=prioritized_sections,
             model_name=self.provider.model if response is not None else f"{self.provider.model}:fallback",
+        )
+
+    def _build_clarify_answer(self, state: QueryState, *, limitations: list[str]) -> StructuredAnswer:
+        """Return a deterministic clarifying answer when the intent gate blocks retrieval."""
+
+        clarification_question = state.clarification_question or "Уточните документ, локатор или инженерный аспект запроса."
+        section = AnswerSection(
+            heading="Нужно уточнение",
+            body=clarification_question,
+            source_kind=EvidenceSourceKind.NORMATIVE,
+            citations=[],
+        )
+        warnings = ["Запрос остановлен на intent gate до запуска retrieval, чтобы избежать шумного ответа."]
+        markdown = self._render_markdown(
+            query_text=state.query_text,
+            sections=[section],
+            assumptions=[],
+            limitations=limitations,
+            warnings=warnings,
+            coverage_status=CoverageStatus.INSUFFICIENT,
+        )
+        return StructuredAnswer(
+            answer_text=clarification_question,
+            markdown=markdown,
+            answer_format="markdown",
+            coverage_status=CoverageStatus.INSUFFICIENT,
+            has_stale_sources=False,
+            has_external_sources=False,
+            assumptions=[],
+            limitations=limitations,
+            warnings=warnings,
+            sections=[section],
+            model_name="intent_gate:clarify",
+        )
+
+    def _build_no_retrieval_answer(self, state: QueryState, *, limitations: list[str]) -> StructuredAnswer:
+        """Return an honest limited answer for requests outside the retrieval path."""
+
+        body = (
+            "Запрос не был отправлен в нормативный retrieval. "
+            "Текущая конфигурация Stage 2 отвечает только на инженерные запросы, "
+            "которые можно подтвердить нормативными или явно разрешенными вспомогательными источниками."
+        )
+        section = AnswerSection(
+            heading="Ответ ограничен",
+            body=body,
+            source_kind=EvidenceSourceKind.NORMATIVE,
+            citations=[],
+        )
+        warnings = ["Retrieval не запускался, потому что запрос признан ненормативным или недостаточно профильным для этой системы."]
+        markdown = self._render_markdown(
+            query_text=state.query_text,
+            sections=[section],
+            assumptions=[],
+            limitations=limitations,
+            warnings=warnings,
+            coverage_status=CoverageStatus.INSUFFICIENT,
+        )
+        return StructuredAnswer(
+            answer_text=body,
+            markdown=markdown,
+            answer_format="markdown",
+            coverage_status=CoverageStatus.INSUFFICIENT,
+            has_stale_sources=False,
+            has_external_sources=False,
+            assumptions=[],
+            limitations=limitations,
+            warnings=warnings,
+            sections=[section],
+            model_name="intent_gate:no_retrieval",
         )
 
     def persist_answer(self, *, query: QAQuery, answer: StructuredAnswer) -> tuple[QAAnswer, QAMessage]:

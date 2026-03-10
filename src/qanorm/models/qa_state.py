@@ -63,6 +63,15 @@ class PromptRenderContext:
     query_id: UUID | None
     query_text: str
     session_summary: str | None = None
+    intent: str | None = None
+    retrieval_mode: str | None = None
+    clarification_required: bool = False
+    clarification_question: str | None = None
+    document_hints: list[str] = field(default_factory=list)
+    locator_hints: list[str] = field(default_factory=list)
+    subject: str | None = None
+    engineering_aspects: list[str] = field(default_factory=list)
+    constraints: list[str] = field(default_factory=list)
     recent_messages: list[QAMessage] = field(default_factory=list)
     evidence_bundle: EvidenceBundle = field(default_factory=EvidenceBundle)
     stale_warning_messages: list[str] = field(default_factory=list)
@@ -93,6 +102,15 @@ class QueryState:
     status: QueryStatus = QueryStatus.PENDING
     query_type: str | None = None
     session_summary: str | None = None
+    intent: str | None = None
+    retrieval_mode: str | None = None
+    clarification_required: bool = False
+    clarification_question: str | None = None
+    document_hints: list[str] = field(default_factory=list)
+    locator_hints: list[str] = field(default_factory=list)
+    subject: str | None = None
+    engineering_aspects: list[str] = field(default_factory=list)
+    constraints: list[str] = field(default_factory=list)
     recent_messages: list[QAMessage] = field(default_factory=list)
     subtasks: list[SubtaskState] = field(default_factory=list)
     evidence_bundle: EvidenceBundle = field(default_factory=EvidenceBundle)
@@ -115,6 +133,15 @@ class QueryState:
             query_id=self.query_id,
             query_text=self.query_text,
             session_summary=self.session_summary,
+            intent=self.intent,
+            retrieval_mode=self.retrieval_mode,
+            clarification_required=self.clarification_required,
+            clarification_question=self.clarification_question,
+            document_hints=list(self.document_hints),
+            locator_hints=list(self.locator_hints),
+            subject=self.subject,
+            engineering_aspects=list(self.engineering_aspects),
+            constraints=list(self.constraints),
             recent_messages=list(self.recent_messages),
             evidence_bundle=self.evidence_bundle,
         )
