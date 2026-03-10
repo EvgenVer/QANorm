@@ -2,8 +2,8 @@ trusted_sources:
   defaults:
     search_mode: site_query
     max_results: 5
-    fetch_timeout_seconds: 20
-    max_pages_per_query: 5
+    fetch_timeout_seconds: 6
+    max_pages_per_query: 2
     extraction_strategy: generic_article
     cache_enabled: true
     search_cache_ttl_hours: 24
@@ -32,8 +32,8 @@ trusted_sources:
           - специалистам
         max_results: 5
       fetch:
-        timeout_seconds: 20
-        max_pages_per_query: 5
+        timeout_seconds: 5
+        max_pages_per_query: 1
       extract:
         strategy: generic_article
         article_selectors: []
@@ -64,8 +64,8 @@ trusted_sources:
           - guidance
         max_results: 5
       fetch:
-        timeout_seconds: 20
-        max_pages_per_query: 5
+        timeout_seconds: 6
+        max_pages_per_query: 2
       extract:
         strategy: generic_article
         article_selectors: []

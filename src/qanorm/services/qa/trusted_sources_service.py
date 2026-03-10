@@ -168,7 +168,10 @@ def normalize_trusted_hits_to_evidence(
                 source_kind=EvidenceSourceKind.TRUSTED_WEB,
                 source_url=hit.source_url,
                 source_domain=hit.source_domain,
-                locator=hit.locator or hit.title,
+                # Preserve the page title as the primary display label and keep the
+                # fragment marker as a secondary locator for the UI.
+                locator=hit.title,
+                locator_end=hit.locator,
                 quote=hit.text[:500],
                 chunk_text=hit.text,
                 relevance_score=hit.score,
@@ -203,8 +206,9 @@ async def _search_one_source(
         try:
             page, page_cache_hit = _load_page(candidate=candidate, source=source, cache_repository=cache_repository)
             fragments, fragments_cache_hit = _load_fragments(page=page, source=source, cache_repository=cache_repository)
-        except ValueError:
-            # Skip unsupported pages such as PDFs when the source is configured for HTML extraction.
+        except Exception:
+            # Skip slow, unsupported, or malformed pages so one bad trusted URL does
+            # not block the whole answer path.
             continue
         cache_hit_count += int(page_cache_hit) + int(fragments_cache_hit)
         for index, fragment in enumerate(fragments[:2]):
