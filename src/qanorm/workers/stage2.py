@@ -248,7 +248,12 @@ async def process_query_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dic
                             subtask_id=stored_subtask.id,
                             event_type="normative_retrieval_strategy_selected",
                             actor_kind="retrieval_service",
-                            payload_json=retrieval_metadata | {"document_resolution": state.document_resolution},
+                            payload_json=retrieval_metadata
+                            | {
+                                "document_resolution": state.document_resolution,
+                                "primary_hit_count": len(retrieval_result.primary_hits),
+                                "secondary_hit_count": len(retrieval_result.secondary_hits),
+                            },
                         )
                         stored_evidence = persist_normative_evidence(
                             session,
@@ -259,6 +264,8 @@ async def process_query_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dic
                         state.evidence_bundle.normative.extend(stored_evidence)
                         stored_subtask.result_summary = (
                             f"normative_hits={len(stored_evidence)}"
+                            f";primary={len(retrieval_result.primary_hits)}"
+                            f";secondary={len(retrieval_result.secondary_hits)}"
                             f";scope={retrieval_metadata['final_scope']}"
                             f";fallback={str(retrieval_metadata['fallback_used']).lower()}"
                         )

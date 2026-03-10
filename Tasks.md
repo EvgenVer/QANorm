@@ -1112,16 +1112,16 @@
 
 ### Блок AS. Redesign: query rewriting, reranking и отбор evidence
 
-931. [ ] Создать файл `src/qanorm/services/qa/query_rewriter.py`.
-932. [ ] Реализовать построение отдельных `exact`, `lexical` и `semantic` retrieval-query из пользовательского вопроса.
-933. [ ] Создать файл `src/qanorm/services/qa/reranking_service.py`.
-934. [ ] Реализовать абстракцию reranker provider и code-first fallback на случай отсутствия model-assisted reranker.
-935. [ ] Реализовать reranking shortlist-кандидатов после primary retrieval.
-936. [ ] Реализовать разделение evidence на `primary` и `secondary` вместо простого top-k списка chunks.
-937. [ ] Реализовать quality thresholds для отсечения шумных chunks до этапа synthesis.
-938. [ ] Реализовать сохранение признаков отбора и ranking rationale в evidence metadata для отладки и аудита.
-939. [ ] Реализовать unit-тесты на query rewriting, reranking и отбор `primary/secondary evidence`.
-940. [ ] Реализовать интеграционный тест качества retrieval для прямого вопроса по конкретной норме на наполненной БД Этапа 1.
+931. [x] Создать файл `src/qanorm/services/qa/query_rewriter.py`.
+932. [x] Реализовать построение отдельных `exact`, `lexical` и `semantic` retrieval-query из пользовательского вопроса.
+933. [x] Создать файл `src/qanorm/services/qa/reranking_service.py`.
+934. [x] Реализовать абстракцию reranker provider и code-first fallback на случай отсутствия model-assisted reranker.
+935. [x] Реализовать reranking shortlist-кандидатов после primary retrieval.
+936. [x] Реализовать разделение evidence на `primary` и `secondary` вместо простого top-k списка chunks.
+937. [x] Реализовать quality thresholds для отсечения шумных chunks до этапа synthesis.
+938. [x] Реализовать сохранение признаков отбора и ranking rationale в evidence metadata для отладки и аудита.
+939. [x] Реализовать unit-тесты на query rewriting, reranking и отбор `primary/secondary evidence`.
+940. [x] Реализовать интеграционный тест качества retrieval для прямого вопроса по конкретной норме на наполненной БД Этапа 1.
 
 ### Блок AT. Redesign: стратегия ответа и verification gate
 

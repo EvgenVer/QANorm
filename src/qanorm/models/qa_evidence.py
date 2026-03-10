@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Index, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from qanorm.db.base import Base
@@ -88,6 +88,7 @@ class QAEvidence(Base):
     quote: Mapped[str | None] = mapped_column(Text, nullable=True)
     chunk_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     relevance_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    selection_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     freshness_status: Mapped[FreshnessStatus] = mapped_column(
         Enum(
             FreshnessStatus,

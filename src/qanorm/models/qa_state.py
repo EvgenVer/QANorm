@@ -36,6 +36,18 @@ class EvidenceBundle:
 
         return [*self.normative, *self.trusted_web, *self.open_web]
 
+    @property
+    def primary_normative(self) -> list[QAEvidence]:
+        """Return normative evidence explicitly selected as primary."""
+
+        return [item for item in self.normative if (item.selection_metadata or {}).get("selection_tier") == "primary"]
+
+    @property
+    def secondary_normative(self) -> list[QAEvidence]:
+        """Return normative evidence explicitly selected as secondary."""
+
+        return [item for item in self.normative if (item.selection_metadata or {}).get("selection_tier") == "secondary"]
+
     def fingerprint(self) -> str:
         """Build a stable fingerprint for the current evidence set."""
 

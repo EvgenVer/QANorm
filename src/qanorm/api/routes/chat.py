@@ -234,4 +234,5 @@ def _serialize_evidence(evidence: QAEvidence) -> EvidenceResponse:
         is_normative=evidence.is_normative,
         requires_verification=evidence.requires_verification,
         relevance_score=evidence.relevance_score,
+        selection_metadata=dict(evidence.selection_metadata) if evidence.selection_metadata else None,
     )

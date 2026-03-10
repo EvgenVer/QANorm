@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -89,15 +90,15 @@ def test_estimate_retrieval_rollout_uses_local_provider_cost_zero(monkeypatch) -
 
 
 def test_retrieve_normative_evidence_merges_ranked_sources(monkeypatch) -> None:
-    exact_hit = _build_hit(score=10.0, score_source="exact")
-    fts_hit = _build_hit(chunk_id=exact_hit.chunk_id, chunk_hash=exact_hit.chunk_hash, score=0.8, score_source="fts")
-    vector_hit = _build_hit(score=0.7, score_source="vector")
-    secondary_hit = _build_hit(score=0.2, score_source="reference")
+    exact_hit = _build_hit(score=10.0, score_source="exact", locator="п. 8.3", quote="Требование пункта 8.3.")
+    fts_hit = _build_hit(chunk_id=exact_hit.chunk_id, chunk_hash=exact_hit.chunk_hash, score=0.8, score_source="fts", locator="п. 8.3", quote="Требование пункта 8.3.")
+    vector_hit = _build_hit(score=0.7, score_source="vector", locator="п. 5.1", quote="Общие положения.")
+    secondary_hit = _build_hit(score=0.2, score_source="reference", locator="таблица 5", quote="Связанный документ.")
 
-    monkeypatch.setattr("qanorm.services.qa.retrieval_service._run_exact_match_lookup", lambda session, request: [exact_hit])
-    monkeypatch.setattr("qanorm.services.qa.retrieval_service._run_fts_search", lambda session, request: [fts_hit])
+    monkeypatch.setattr("qanorm.services.qa.retrieval_service._run_exact_match_lookup", lambda session, request, query_rewrite: [exact_hit])
+    monkeypatch.setattr("qanorm.services.qa.retrieval_service._run_fts_search", lambda session, request, query_rewrite: [fts_hit])
 
-    async def _fake_vector_search(session, *, request, embedding_provider=None, runtime_config=None):
+    async def _fake_vector_search(session, *, request, query_rewrite, embedding_provider=None, runtime_config=None):
         return [vector_hit]
 
     monkeypatch.setattr("qanorm.services.qa.retrieval_service._run_vector_search", _fake_vector_search)
@@ -106,11 +107,17 @@ def test_retrieve_normative_evidence_merges_ranked_sources(monkeypatch) -> None:
         lambda session, *, primary_hits, limit: [secondary_hit],
     )
 
-    result = asyncio.run(retrieve_normative_evidence(MagicMock(), request=RetrievalRequest(query_text="SP 1", limit=5)))
+    result = asyncio.run(
+        retrieve_normative_evidence(
+            MagicMock(),
+            request=RetrievalRequest(query_text="SP 1", document_hint="SP 1", locator_hint="п. 8.3", limit=5),
+        )
+    )
 
     assert result.primary_hits[0].chunk_id == exact_hit.chunk_id
+    assert result.primary_hits[0].selection_tier == "primary"
     assert "exact" in result.primary_hits[0].score_source
-    assert result.secondary_hits == [secondary_hit]
+    assert result.secondary_hits[-1].chunk_id == secondary_hit.chunk_id
 
 
 def test_normalize_hits_to_evidence_deduplicates_by_chunk_hash() -> None:
@@ -121,6 +128,16 @@ def test_normalize_hits_to_evidence_deduplicates_by_chunk_hash() -> None:
 
     assert len(evidence) == 1
     assert evidence[0].chunk_id == first.chunk_id
+    assert evidence[0].selection_metadata["selection_tier"] == "candidate"
+
+
+def test_normalize_hits_to_evidence_preserves_selection_metadata() -> None:
+    hit = replace(_build_hit(), selection_tier="primary", retrieval_metadata={"ranking_rationale": ["exact_match"]})
+
+    evidence = normalize_hits_to_evidence(query_id=uuid4(), hits=[hit])
+
+    assert evidence[0].selection_metadata["selection_tier"] == "primary"
+    assert evidence[0].selection_metadata["ranking_rationale"] == ["exact_match"]
 
 
 def test_retrieve_normative_evidence_with_resolution_prefers_scoped_hits(monkeypatch) -> None:
@@ -212,6 +229,7 @@ def _build_hit(
     score_source: str = "fts",
     locator: str = "1",
     locator_end: str = "1.1",
+    quote: str = "quote",
 ) -> RetrievalHit:
     return RetrievalHit(
         chunk_id=chunk_id or uuid4(),
@@ -227,7 +245,7 @@ def _build_hit(
         locator=locator,
         locator_end=locator_end,
         chunk_text="chunk text",
-        quote="quote",
+        quote=quote,
         score=score,
         score_source=score_source,
         freshness_status=FreshnessStatus.FRESH,

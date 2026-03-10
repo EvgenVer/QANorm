@@ -121,6 +121,7 @@ class EvidenceResponse(BaseModel):
     is_normative: bool
     requires_verification: bool
     relevance_score: float | None = None
+    selection_metadata: dict[str, Any] | None = None
 
 
 class QueryDetailResponse(BaseModel):

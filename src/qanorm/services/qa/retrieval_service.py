@@ -23,6 +23,8 @@ from qanorm.models import (
     RetrievalChunk,
 )
 from qanorm.services.qa.document_resolver import DocumentResolutionResult, DocumentResolutionStatus
+from qanorm.services.qa.query_rewriter import QueryRewrite, QueryRewriter
+from qanorm.services.qa.reranking_service import RerankingService
 from qanorm.normalizers.codes import clean_document_code, normalize_document_code
 from qanorm.observability import increment_event, set_backfill_metric, set_retrieval_metric
 from qanorm.providers import create_provider_registry
@@ -47,6 +49,7 @@ class RetrievalRequest:
     document_type: str | None = None
     document_ids: list[UUID] = field(default_factory=list)
     locator_hint: str | None = None
+    document_hint: str | None = None
     retrieval_scope: str = "global"
     active_only: bool = True
     include_related_documents: bool = True
@@ -75,6 +78,8 @@ class RetrievalHit:
     score: float
     score_source: str
     freshness_status: FreshnessStatus
+    selection_tier: str = "candidate"
+    retrieval_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True, frozen=True)
@@ -100,25 +105,43 @@ async def retrieve_normative_evidence(
 ) -> RetrievalResult:
     """Run exact, FTS, and optional vector retrieval over active normative chunks."""
 
-    exact_hits = _run_exact_match_lookup(session, request=request)
-    fts_hits = _run_fts_search(session, request=request)
+    query_rewrite = QueryRewriter().rewrite(
+        request.query_text,
+        document_hints=[item for item in [request.document_hint] if item],
+        locator_hints=[item for item in [request.locator_hint] if item],
+    )
+
+    exact_hits = _run_exact_match_lookup(session, request=request, query_rewrite=query_rewrite)
+    fts_hits = _run_fts_search(session, request=request, query_rewrite=query_rewrite)
     vector_hits: list[RetrievalHit] = []
     if request.enable_vector_search:
         vector_hits = await _run_vector_search(
             session,
             request=request,
+            query_rewrite=query_rewrite,
             embedding_provider=embedding_provider,
             runtime_config=runtime_config,
         )
 
-    primary_hits = _merge_ranked_hits(
+    shortlist_hits = _merge_ranked_hits(
         exact_hits=exact_hits,
         fts_hits=fts_hits,
         vector_hits=vector_hits,
-        offset=request.offset,
-        limit=request.limit,
+        offset=0,
+        limit=max(request.limit * 4, 12),
+        query_rewrite=query_rewrite,
     )
-    secondary_hits = _load_secondary_hits(session, primary_hits=primary_hits, limit=max(3, request.limit // 2)) if request.include_related_documents else []
+    reranking_selection = await RerankingService().select_hits(
+        query_rewrite=query_rewrite,
+        hits=shortlist_hits,
+        primary_limit=max(1, min(request.limit, 3)),
+        secondary_limit=max(2, request.limit),
+    )
+    primary_hits = reranking_selection.primary_hits[request.offset : request.offset + request.limit]
+    secondary_hits = reranking_selection.secondary_hits[: max(3, request.limit // 2)]
+    if request.include_related_documents and primary_hits:
+        related_hits = _load_secondary_hits(session, primary_hits=primary_hits, limit=max(3, request.limit // 2))
+        secondary_hits = _merge_secondary_candidates(secondary_hits, related_hits)
     set_retrieval_metric("primary_hit_count", float(len(primary_hits)))
     set_retrieval_metric("secondary_hit_count", float(len(secondary_hits)))
     increment_event("retrieval_request", status="ok")
@@ -155,6 +178,7 @@ async def retrieve_normative_evidence_with_resolution(
         request,
         document_ids=resolution.resolved_document_ids,
         locator_hint=resolution.locator_hint,
+        document_hint=resolution.matched_hint,
         retrieval_scope=resolution.retrieval_scope,
     )
     metadata["initial_scope"] = resolution.retrieval_scope
@@ -214,6 +238,7 @@ def normalize_hits_to_evidence(
                 quote=hit.quote,
                 chunk_text=hit.chunk_text,
                 relevance_score=hit.score,
+                selection_metadata=hit.retrieval_metadata | {"selection_tier": hit.selection_tier},
                 freshness_status=hit.freshness_status,
                 is_normative=True,
                 requires_verification=False,
@@ -242,7 +267,12 @@ def persist_normative_evidence(
         subtask_id=subtask_id,
         event_type="normative_retrieval_persisted",
         actor_kind="retrieval_service",
-        payload_json={"evidence_count": len(stored), "hit_count": len(hits)},
+        payload_json={
+            "evidence_count": len(stored),
+            "hit_count": len(hits),
+            "primary_count": sum(1 for item in hits if item.selection_tier == "primary"),
+            "secondary_count": sum(1 for item in hits if item.selection_tier == "secondary"),
+        },
     )
     return stored
 
@@ -338,21 +368,22 @@ async def backfill_chunk_embeddings(
     return result
 
 
-def _run_exact_match_lookup(session: Session, *, request: RetrievalRequest) -> list[RetrievalHit]:
+def _run_exact_match_lookup(session: Session, *, request: RetrievalRequest, query_rewrite: QueryRewrite) -> list[RetrievalHit]:
     """Run code-oriented and locator-oriented retrieval without dense search."""
 
-    normalized_code, locator_hint = _split_query_for_locator(request.query_text)
-    effective_locator_hint = request.locator_hint or locator_hint
+    normalized_code, inferred_locator_hint = _split_query_for_locator(query_rewrite.exact_query)
+    effective_locator_hint = request.locator_hint or query_rewrite.locator_hint or inferred_locator_hint
+    exact_query = query_rewrite.exact_query or request.query_text
     predicates = [
         Document.normalized_code == normalized_code,
-        Document.display_code.ilike(f"%{clean_document_code(request.query_text)}%"),
+        Document.display_code.ilike(f"%{clean_document_code(exact_query)}%"),
     ]
     if request.document_ids:
         predicates.extend(
             [
                 RetrievalChunk.locator.ilike(f"%{effective_locator_hint}%") if effective_locator_hint else literal(False),
                 RetrievalChunk.locator_end.ilike(f"%{effective_locator_hint}%") if effective_locator_hint else literal(False),
-                RetrievalChunk.chunk_text.ilike(f"%{clean_document_code(request.query_text)}%"),
+                RetrievalChunk.chunk_text.ilike(f"%{clean_document_code(exact_query)}%"),
             ]
         )
     elif effective_locator_hint:
@@ -364,13 +395,23 @@ def _run_exact_match_lookup(session: Session, *, request: RetrievalRequest) -> l
         .order_by(Document.normalized_code.asc(), RetrievalChunk.chunk_index.asc())
         .limit(max(request.limit * 2, 10))
     )
-    return [_row_to_hit(session, row, score_source="exact", score=float(max(1, request.limit * 2 - index))) for index, row in enumerate(session.execute(stmt).all(), start=1)]
+    return [
+        _row_to_hit(
+            session,
+            row,
+            score_source="exact",
+            score=float(max(1, request.limit * 2 - index)),
+            retrieval_metadata={"channel": "exact", "rewrite_query": exact_query, "locator_hint": effective_locator_hint},
+        )
+        for index, row in enumerate(session.execute(stmt).all(), start=1)
+    ]
 
 
-def _run_fts_search(session: Session, *, request: RetrievalRequest) -> list[RetrievalHit]:
+def _run_fts_search(session: Session, *, request: RetrievalRequest, query_rewrite: QueryRewrite) -> list[RetrievalHit]:
     """Run lexical retrieval against persisted chunk TSV payloads."""
 
-    ts_query = func.plainto_tsquery("simple", request.query_text)
+    lexical_query = query_rewrite.lexical_query or request.query_text
+    ts_query = func.plainto_tsquery("simple", lexical_query)
     rank = func.ts_rank_cd(RetrievalChunk.chunk_text_tsv, ts_query)
     stmt = (
         _build_chunk_query(session, request=request)
@@ -382,7 +423,15 @@ def _run_fts_search(session: Session, *, request: RetrievalRequest) -> list[Retr
     hits: list[RetrievalHit] = []
     for row in session.execute(stmt).all():
         score = float(row[-1] or 0.0)
-        hits.append(_row_to_hit(session, row[:-1], score_source="fts", score=score))
+        hits.append(
+            _row_to_hit(
+                session,
+                row[:-1],
+                score_source="fts",
+                score=score,
+                retrieval_metadata={"channel": "fts", "rewrite_query": lexical_query},
+            )
+        )
     return hits
 
 
@@ -390,6 +439,7 @@ async def _run_vector_search(
     session: Session,
     *,
     request: RetrievalRequest,
+    query_rewrite: QueryRewrite,
     embedding_provider: EmbeddingProvider | None = None,
     runtime_config: RuntimeConfig | None = None,
 ) -> list[RetrievalHit]:
@@ -400,7 +450,8 @@ async def _run_vector_search(
         registry=create_provider_registry(),
         runtime_config=config,
     ).embeddings
-    response = await provider.embed(EmbeddingRequest(model=provider.model, texts=[request.query_text]))
+    semantic_query = query_rewrite.semantic_query or request.query_text
+    response = await provider.embed(EmbeddingRequest(model=provider.model, texts=[semantic_query]))
     if not response.vectors:
         return []
 
@@ -424,7 +475,15 @@ async def _run_vector_search(
     hits: list[RetrievalHit] = []
     for row in session.execute(stmt).all():
         score = max(0.0, 1.0 - float(row[-1] or 1.0))
-        hits.append(_row_to_hit(session, row[:-1], score_source="vector", score=score))
+        hits.append(
+            _row_to_hit(
+                session,
+                row[:-1],
+                score_source="vector",
+                score=score,
+                retrieval_metadata={"channel": "vector", "rewrite_query": semantic_query},
+            )
+        )
     return hits
 
 
@@ -435,6 +494,7 @@ def _merge_ranked_hits(
     vector_hits: list[RetrievalHit],
     offset: int,
     limit: int,
+    query_rewrite: QueryRewrite,
 ) -> list[RetrievalHit]:
     """Combine exact, lexical, and vector rankings with reciprocal-rank fusion."""
 
@@ -458,7 +518,17 @@ def _merge_ranked_hits(
     )
     sliced = ranked[offset : offset + limit]
     return [
-        replace(item["hit"], score=item["score"], score_source="+".join(sorted(item["sources"])))
+        replace(
+            item["hit"],
+            score=item["score"],
+            score_source="+".join(sorted(item["sources"])),
+            retrieval_metadata={
+                **item["hit"].retrieval_metadata,
+                "rrf_score": round(item["score"], 6),
+                "retrieval_sources": sorted(item["sources"]),
+                "query_rewrite": query_rewrite.to_payload(),
+            },
+        )
         for item in sliced
     ]
 
@@ -503,7 +573,20 @@ def _load_secondary_hits(session: Session, *, primary_hits: list[RetrievalHit], 
         .order_by(Document.normalized_code.asc(), RetrievalChunk.chunk_index.asc())
         .limit(limit)
     )
-    return [_row_to_hit(session, row, score_source="reference", score=0.25) for row in session.execute(stmt).all()]
+    return [
+        replace(
+            _row_to_hit(
+                session,
+                row,
+                score_source="reference",
+                score=0.25,
+                retrieval_metadata={"channel": "reference"},
+            ),
+            selection_tier="secondary",
+            retrieval_metadata={"channel": "reference", "ranking_rationale": ["related_document_reference"]},
+        )
+        for row in session.execute(stmt).all()
+    ]
 
 
 def _build_chunk_query(session: Session, *, request: RetrievalRequest):
@@ -527,7 +610,14 @@ def _build_chunk_query(session: Session, *, request: RetrievalRequest):
     return stmt
 
 
-def _row_to_hit(session: Session, row: tuple[Any, ...], *, score_source: str, score: float) -> RetrievalHit:
+def _row_to_hit(
+    session: Session,
+    row: tuple[Any, ...],
+    *,
+    score_source: str,
+    score: float,
+    retrieval_metadata: dict[str, Any] | None = None,
+) -> RetrievalHit:
     """Convert one SQL row into a normalized hit with reconstructed quote text."""
 
     chunk, document, version = row
@@ -551,7 +641,24 @@ def _row_to_hit(session: Session, row: tuple[Any, ...], *, score_source: str, sc
         score=score,
         score_source=score_source,
         freshness_status=freshness_status,
+        retrieval_metadata=dict(retrieval_metadata or {}),
     )
+
+
+def _merge_secondary_candidates(
+    reranked_secondary_hits: list[RetrievalHit],
+    related_hits: list[RetrievalHit],
+) -> list[RetrievalHit]:
+    """Deduplicate secondary evidence while preserving reranked hits first."""
+
+    merged: list[RetrievalHit] = []
+    seen_chunk_ids: set[UUID] = set()
+    for hit in [*reranked_secondary_hits, *related_hits]:
+        if hit.chunk_id in seen_chunk_ids:
+            continue
+        seen_chunk_ids.add(hit.chunk_id)
+        merged.append(replace(hit, selection_tier="secondary"))
+    return merged
 
 
 def _build_chunk_quote(session: Session, chunk: RetrievalChunk) -> str:
