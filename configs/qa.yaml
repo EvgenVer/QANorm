@@ -6,13 +6,13 @@ qa:
     summary_keep_recent_messages: 8
     max_parallel_queries_per_session: 1
   providers:
-    # Local defaults keep the Stage 2 scaffold runnable without cloud keys.
+    # Use Gemini for runtime reasoning and synthesis, and Gemini embeddings for retrieval.
     orchestration:
-      provider: ollama
-      model: qwen2.5:7b-instruct
+      provider: gemini
+      model: gemini-2.5-flash-lite
     synthesis:
-      provider: ollama
-      model: qwen2.5:14b-instruct
+      provider: gemini
+      model: gemini-2.5-flash
     embeddings:
       provider: gemini
       model: gemini-embedding-001
