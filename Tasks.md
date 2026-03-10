@@ -577,7 +577,7 @@
 В список включены не только задачи, явно перечисленные в `Plan.md`, но и обязательные вспомогательные шаги, без которых реализация Этапа 2 будет неполной:
 
 - служебные persistent-сущности для аудита и журналирования поиска;
-- persistent-сущности для локального корпуса trusted sources;
+- bounded shared cache и конфигурационный registry для online trusted-source retrieval;
 - инфраструктурные шаги для `Redis`, `ARQ`, `SearXNG` и observability stack;
 - контур изоляции сессий, который должен покрывать не только API, но и кэш, фоновые задачи и временные артефакты.
 
@@ -655,6 +655,7 @@
 532. [x] Зафиксировать SQLAlchemy-модель `trusted_source_chunks`.
 533. [x] Создать файл `src/qanorm/models/trusted_source_sync_run.py`.
 534. [x] Зафиксировать SQLAlchemy-модель `trusted_source_sync_runs`.
+Примечание: модели `trusted_source_documents`, `trusted_source_chunks` и `trusted_source_sync_runs` являются переходной реализацией и подлежат замене bounded cache-моделью в блоке `AK`.
 535. [x] Экспортировать все новые модели Этапа 2 в `src/qanorm/models/__init__.py`.
 536. [x] Добавить внешние ключи и ограничения целостности между сущностями Этапа 2.
 537. [x] Добавить индексы для частых выборок по `session_id`, `query_id`, `status`, `created_at` и ключам поиска.
@@ -699,6 +700,7 @@
 573. [x] Реализовать сохранение документа trusted source.
 574. [x] Реализовать сохранение чанков trusted source.
 575. [x] Реализовать сохранение sync run trusted source.
+Примечание: repository локального trusted corpus считается legacy и должен быть выведен из основного runtime после перехода на online trusted-source retrieval в блоке `AK`.
 
 ### Блок AC. Сессионные сервисы и внутреннее состояние Этапа 2
 
@@ -927,25 +929,27 @@
 776. [x] Реализовать интеграционный тест ответа при stale-документе.
 777. [x] Выполнить smoke-проверку запуска refresh по реальному документу.
 
-### Блок AK. Trusted sources и локальный индекс доверенных источников
+### Блок AK. Trusted sources как online retrieval по allowlist-источникам
+
+Примечание: ранняя локально-индексная реализация trusted sources считается промежуточной и должна быть заменена целевой online-архитектурой, описанной ниже.
 
 778. [x] Создать файл `configs/trusted_sources.yaml`.
 779. [x] Реализовать загрузку allowlist trusted domains в настройки приложения.
-780. [x] Определить конфигурационную модель trusted source adapter.
-781. [x] Создать файл `src/qanorm/fetchers/trusted_sources.py`.
-782. [x] Реализовать базовую загрузку страницы trusted source.
-783. [x] Реализовать discovery trusted source через `sitemap.xml` или эквивалентную карту источника.
-784. [x] Реализовать сохранение `trusted_source_sync_run`.
-785. [x] Реализовать сохранение `trusted_source_document`.
-786. [x] Реализовать chunking текста trusted source документа.
-787. [x] Реализовать индексацию чанков trusted source для локального поиска.
-788. [x] Реализовать локальный поиск по индексу trusted sources.
-789. [x] Реализовать нормализацию результата trusted source в evidence-объект.
-790. [x] Реализовать background job `trusted_source_sync_job`.
-791. [x] Реализовать CLI-команду ручной синхронизации trusted sources.
-792. [x] Реализовать запись вызовов trusted search в `search_events`.
-793. [x] Реализовать unit-тесты на sync и search trusted sources.
-794. [ ] Выполнить smoke-проверку retrieval по одному allowlist-домену.
+780. [x] Определить конфигурационную модель source registry для trusted sources.
+781. [x] Перестроить схему `configs/trusted_sources.yaml` вокруг `defaults` и source cards вместо описания локального corpus sync.
+782. [x] Добавить в `configs/trusted_sources.yaml` две стартовые карточки trusted sources для тестирования: одну русскоязычную и одну англоязычную.
+783. [ ] Создать сущность хранения `trusted_source_cache_entry` и миграцию для bounded shared cache trusted sources.
+784. [ ] Создать repository доступа к `trusted_source_cache_entry` с операциями чтения, записи, TTL-проверки и инвалидирования.
+785. [ ] Рефакторить `src/qanorm/fetchers/trusted_sources.py` из sitemap-sync логики в online source-aware fetch/search слой.
+786. [ ] Реализовать `TrustedSourceRouter`, выбирающий релевантные trusted sources и формирующий search plan для запроса.
+787. [ ] Реализовать online trusted search provider с site-restricted query strategy и поддержкой source-specific query hints.
+788. [ ] Реализовать строгую фильтрацию URL по `allowed_prefixes`, `blocked_prefixes` и canonical URL normalization.
+789. [ ] Реализовать `TrustedPageFetcher` с timeout/retry/rate-limit политиками для approved sources.
+790. [ ] Реализовать `TrustedContentExtractor` с generic-стратегией, source-specific selectors и сохранением language/origin metadata.
+791. [ ] Реализовать разбивку trusted page на временные evidence-fragments без постоянной индексации всего trusted-сайта.
+792. [ ] Реализовать bounded shared cache с TTL для search results, fetched pages и extracted fragments trusted sources.
+793. [ ] Заменить `trusted_source_sync_job` на `trusted_source_cache_cleanup_job` и `trusted_source_prefetch_job`, а также обновить `TrustedSearchTool` и `search_events` под online trusted-source workflow.
+794. [ ] Реализовать unit-тесты на online trusted retrieval, TTL-cache поведение и multilingual trusted sources и выполнить smoke-проверку по одному allowlist-источнику.
 
 ### Блок AL. Open web search через self-hosted SearXNG
 
@@ -961,9 +965,9 @@
 804. [x] Реализовать санитарную очистку HTML и извлечение чистого текста.
 805. [x] Реализовать нормализацию open web результата в evidence-объект.
 806. [x] Реализовать background job `open_web_research_job`.
-807. [ ] Реализовать open web fallback в оркестраторе при недостаточности нормативного покрытия.
+807. [ ] Реализовать open web fallback в оркестраторе только после недостаточности нормативного и trusted-source покрытия.
 808. [x] Реализовать unit-тесты на интеграцию с `SearXNG` и content extraction.
-809. [ ] Выполнить smoke-проверку open web fallback на одном запросе.
+809. [ ] Выполнить smoke-проверку open web fallback на одном запросе после исчерпания нормативного и trusted-source покрытия.
 
 ### Блок AM. Верификация, безопасность и изоляция сессий
 
@@ -1070,7 +1074,7 @@
 898. [ ] Реализовать интеграционный тест evidence-based ответа на простой нормативный вопрос.
 899. [ ] Реализовать интеграционный тест декомпозиции сложного multi-aspect вопроса.
 900. [ ] Реализовать интеграционный тест неблокирующей freshness-ветки.
-901. [ ] Реализовать интеграционный тест trusted source fallback.
+901. [ ] Реализовать интеграционный тест online trusted-source fallback по allowlist-источнику с TTL-cache.
 902. [ ] Реализовать интеграционный тест open web fallback.
 903. [ ] Реализовать интеграционный тест корректной маркировки внешних ненормативных источников.
 904. [ ] Реализовать интеграционный тест изоляции параллельных web-сессий.

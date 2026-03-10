@@ -1003,7 +1003,7 @@ Q&ANorm/
 
 #### 10.3.4. Web search и внешние источники
 
-- Trusted sources: собственные adapters/crawlers и локальный индекс по allowlist-доменам
+- Trusted sources: online source-aware retrieval по allowlist-источникам с bounded shared cache и TTL
 - Open web search: self-hosted `SearXNG`
 - Paid search API в MVP не используются
 
@@ -1062,7 +1062,7 @@ Q&ANorm/
 - `chunk_embeddings` должны создаваться только для active retrieval-chunks и дедуплицироваться по `chunk_hash`.
 - После завершения backfill dense retrieval должен покрывать весь active нормативный корпус, а fallback на `FTS + metadata + exact-match` должен оставаться только как оптимизация для точных запросов или временный режим до завершения backfill.
 - Перед массовой генерацией embeddings должна выполняться отдельная dry-run оценка количества chunks, токенов, ожидаемого размера хранения и стоимости.
-- Проверка актуальности, refresh документов, trusted source sync и open web research должны выполняться в фоновых задачах и не блокировать основную обработку запроса.
+- Проверка актуальности, refresh документов, trusted-source cache maintenance и open web research должны выполняться в фоновых задачах и не блокировать основную обработку запроса.
 - Все вызовы внешних источников и инструментов должны проходить через единый policy-controlled слой с логированием и аудитом.
 - Системные промпты агентов не должны хардкодиться внутри агентных модулей. Они должны храниться в отдельном prompt catalog, версионироваться в репозитории и подгружаться через отдельный слой рендеринга prompt templates.
 - Контур верификации должен поддерживать ограниченный `repair loop`: после первичной проверки допускается один или несколько целевых repair-pass, но только в пределах заранее заданных лимитов и со стоп-условиями при отсутствии улучшения.
@@ -1140,6 +1140,13 @@ Q&ANorm/
 
 Практически они должны быть оформлены как отдельные модули внутри `src/qanorm/agents/`, но пользоваться общими типами состояния, policy layer и provider interfaces.
 
+Дополнительное правило для `trusted_source_researcher`:
+
+- `trusted_source_researcher` должен выполнять online retrieval только по allowlist-источникам из source registry;
+- поиск trusted sources должен быть отделен от open web search и должен использовать site-restricted query strategy или source-specific adapter;
+- `trusted_source_researcher` может использовать shared bounded cache для search results, fetched pages и extracted fragments, но не должен зависеть от постоянного локального индекса всего trusted-сайта;
+- multilingual trusted sources, включая англоязычные, допускаются, но итоговый ответ должен синтезироваться на языке пользовательской сессии, а origin language должен сохраняться в evidence и source metadata.
+
 Дополнительное правило для `normative_retriever`:
 
 - `normative_retriever` должен искать по `retrieval_chunks`, а не напрямую по каждому `document_node`;
@@ -1210,7 +1217,8 @@ Q&ANorm/
 
 - `freshness_check_job`
 - `document_refresh_job`
-- `trusted_source_sync_job`
+- `trusted_source_cache_cleanup_job`
+- `trusted_source_prefetch_job`
 - `open_web_research_job`
 - `post_answer_enrichment_job`
 - `cleanup_session_state_job`
@@ -1350,15 +1358,16 @@ Q&ANorm/
 
 Должно быть реализовано:
 
-- allowlist доверенных доменов;
-- adapters/crawlers для trusted sources;
-- локальный индекс trusted sources;
+- source registry для trusted sources;
+- online trusted-source retrieval по allowlist-источникам;
+- source-specific search policies: allowed prefixes, blocked prefixes, query hints, extraction strategy;
+- bounded shared cache с TTL для search results, fetched pages и extracted fragments trusted sources;
 - интеграция с self-hosted `SearXNG` для open web;
 - нормализация внешних evidence-блоков и обязательная маркировка ненормативного происхождения.
 
 Результат шага:
 
-- система может закрывать пробелы в ответе через trusted web и open web без смешения этих данных с нормами.
+- система может закрывать пробелы в ответе через online trusted web и open web без смешения этих данных с нормами и без раздувания локальной БД полным trusted corpus.
 
 #### Шаг 9. Контур верификации и безопасности
 
@@ -1677,6 +1686,45 @@ Q&ANorm/
 - `details_json`
 - `created_at`
 
+#### 10.7.13. `search_events`
+
+Назначение:
+
+- аудит и измерение всех поисковых обращений к нормативной базе, trusted sources и open web.
+
+Минимальные поля:
+
+- `id`
+- `query_id`
+- `subtask_id`
+- `provider_name`
+- `search_scope`
+- `query_text`
+- `allowed_domains`
+- `result_count`
+- `status`
+- `created_at`
+
+#### 10.7.14. `trusted_source_cache_entries`
+
+Назначение:
+
+- хранение bounded shared cache для online trusted-source retrieval без превращения его в постоянный локальный индекс всего сайта.
+
+Минимальные поля:
+
+- `id`
+- `cache_kind` (`search_result`, `page`, `extraction`)
+- `source_id`
+- `source_domain`
+- `cache_key`
+- `source_url`
+- `content_hash`
+- `payload_json`
+- `created_at`
+- `expires_at`
+- `last_accessed_at`
+
 ### 10.8. Метрики качества Этапа 2
 
 #### 10.8.1. Метрики производительности
@@ -1697,6 +1745,7 @@ Q&ANorm/
 - отклонение фактического числа chunks, объема хранения и стоимости embeddings от dry-run estimate;
 - доля ответов, использующих только Stage 1 без внешних источников;
 - доля запросов, ушедших в trusted web;
+- cache hit ratio для trusted-source search/page/extraction cache;
 - доля запросов, ушедших в open web.
 
 #### 10.8.3. Метрики качества ответа
@@ -1758,7 +1807,7 @@ Q&ANorm/
 - ответ формируется только из evidence-блоков и содержит ссылки на документ, редакцию, локатор и цитату;
 - freshness check выполняется параллельно с подготовкой ответа и не блокирует выдачу;
 - при stale-версии система корректно предупреждает пользователя и инициирует refresh;
-- реализован trusted web search по allowlist-доменам;
+- реализован online trusted-source retrieval по allowlist-источникам с bounded shared cache и TTL;
 - реализован open web search через self-hosted `SearXNG`;
 - ответ явно разграничивает нормативные и ненормативные источники;
 - реализован web UI в формате чата со streaming ответа;

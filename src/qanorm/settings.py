@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -71,6 +71,9 @@ class StatusesConfig(BaseModel):
 ProviderName = Literal["gemini", "openai", "anthropic", "qwen", "deepseek", "ollama", "lmstudio", "vllm"]
 StreamTransport = Literal["sse", "websocket"]
 OpenWebProvider = Literal["searxng"]
+TrustedSearchMode = Literal["site_query", "source_specific", "sitemap_lookup"]
+TrustedExtractStrategy = Literal["generic_article", "generic_html", "custom"]
+TrustedSourceTrustTier = Literal["high", "medium", "low"]
 
 
 class ProviderSelection(BaseModel):
@@ -138,21 +141,121 @@ class QAFileConfig(BaseModel):
     search: SearchRuntimeConfig
 
 
-class TrustedSourceAdapterConfig(BaseModel):
-    """One allowlisted trusted-source adapter definition."""
+class TrustedSourceDefaultsConfig(BaseModel):
+    """Shared defaults for online trusted-source retrieval."""
 
-    domain: str = Field(min_length=1)
+    search_mode: TrustedSearchMode = "site_query"
+    max_results: int = Field(default=5, gt=0)
+    fetch_timeout_seconds: int = Field(default=15, gt=0)
+    max_pages_per_query: int = Field(default=5, gt=0)
+    extraction_strategy: TrustedExtractStrategy = "generic_article"
+    cache_enabled: bool = True
+    search_cache_ttl_hours: int = Field(default=24, gt=0)
+    page_cache_ttl_hours: int = Field(default=168, gt=0)
+    extraction_cache_ttl_hours: int = Field(default=168, gt=0)
+
+
+class TrustedSourceSearchConfig(BaseModel):
+    """Source-specific search policy for online trusted retrieval."""
+
+    mode: TrustedSearchMode = "site_query"
     sitemap_urls: list[str] = Field(default_factory=list)
     seed_urls: list[str] = Field(default_factory=list)
     allowed_prefixes: list[str] = Field(default_factory=list)
+    blocked_prefixes: list[str] = Field(default_factory=list)
+    query_hints: list[str] = Field(default_factory=list)
+    max_results: int = Field(default=5, gt=0)
+
+
+class TrustedSourceFetchConfig(BaseModel):
+    """Fetch-time controls for trusted-source page loading."""
+
+    timeout_seconds: int = Field(default=15, gt=0)
+    max_pages_per_query: int = Field(default=5, gt=0)
+
+
+class TrustedSourceExtractConfig(BaseModel):
+    """Extraction policy for a trusted source."""
+
+    strategy: TrustedExtractStrategy = "generic_article"
+    article_selectors: list[str] = Field(default_factory=list)
+    remove_selectors: list[str] = Field(default_factory=list)
+
+
+class TrustedSourceCacheConfig(BaseModel):
+    """Bounded shared cache settings for trusted-source retrieval."""
+
+    enabled: bool = True
+    search_ttl_hours: int = Field(default=24, gt=0)
+    page_ttl_hours: int = Field(default=168, gt=0)
+    extraction_ttl_hours: int = Field(default=168, gt=0)
+
+
+class TrustedSourceAdapterConfig(BaseModel):
+    """One allowlisted trusted-source registry card."""
+
+    source_id: str | None = Field(default=None, min_length=1)
+    display_name: str | None = Field(default=None, min_length=1)
+    domain: str = Field(min_length=1)
+    base_url: str | None = Field(default=None, min_length=1)
+    language: str = Field(default="en", min_length=2)
+    country: str | None = Field(default=None, min_length=2)
+    trust_tier: TrustedSourceTrustTier = "high"
+    search: TrustedSourceSearchConfig = Field(default_factory=TrustedSourceSearchConfig)
+    fetch: TrustedSourceFetchConfig = Field(default_factory=TrustedSourceFetchConfig)
+    extract: TrustedSourceExtractConfig = Field(default_factory=TrustedSourceExtractConfig)
+    cache: TrustedSourceCacheConfig = Field(default_factory=TrustedSourceCacheConfig)
+
+    # Backward-compatible fields kept until the legacy local-index implementation is removed.
+    sitemap_urls: list[str] = Field(default_factory=list)
+    seed_urls: list[str] = Field(default_factory=list)
+    allowed_prefixes: list[str] = Field(default_factory=list)
+    blocked_prefixes: list[str] = Field(default_factory=list)
     max_documents_per_sync: int = Field(default=100, gt=0)
     chunk_size_chars: int = Field(default=1600, gt=0)
     chunk_overlap_chars: int = Field(default=200, ge=0)
 
+    @model_validator(mode="after")
+    def _hydrate_compatibility_fields(self) -> "TrustedSourceAdapterConfig":
+        """Mirror new nested config into legacy flat fields until services are refactored."""
+
+        if self.source_id is None:
+            self.source_id = self.domain.replace(".", "_").replace("-", "_")
+        if self.display_name is None:
+            self.display_name = self.domain
+        if self.base_url is None:
+            self.base_url = f"https://{self.domain}"
+
+        if not self.search.sitemap_urls and self.sitemap_urls:
+            self.search.sitemap_urls = list(self.sitemap_urls)
+        if not self.sitemap_urls and self.search.sitemap_urls:
+            self.sitemap_urls = list(self.search.sitemap_urls)
+
+        if not self.search.seed_urls and self.seed_urls:
+            self.search.seed_urls = list(self.seed_urls)
+        if not self.seed_urls and self.search.seed_urls:
+            self.seed_urls = list(self.search.seed_urls)
+
+        if not self.search.allowed_prefixes and self.allowed_prefixes:
+            self.search.allowed_prefixes = list(self.allowed_prefixes)
+        if not self.allowed_prefixes and self.search.allowed_prefixes:
+            self.allowed_prefixes = list(self.search.allowed_prefixes)
+
+        if not self.search.blocked_prefixes and self.blocked_prefixes:
+            self.search.blocked_prefixes = list(self.blocked_prefixes)
+        if not self.blocked_prefixes and self.search.blocked_prefixes:
+            self.blocked_prefixes = list(self.search.blocked_prefixes)
+
+        if self.max_documents_per_sync == 100:
+            self.max_documents_per_sync = self.fetch.max_pages_per_query
+
+        return self
+
 
 class TrustedSourcesFileConfig(BaseModel):
-    """Allowlisted trusted-source adapters loaded from dedicated config."""
+    """Trusted-source registry loaded from dedicated config."""
 
+    defaults: TrustedSourceDefaultsConfig = Field(default_factory=TrustedSourceDefaultsConfig)
     sources: list[TrustedSourceAdapterConfig] = Field(default_factory=list)
 
 
