@@ -854,7 +854,7 @@
 712. [x] Реализовать dry-run estimate по всему active нормативному корпусу: число документов, число `retrieval_chunks`, примерный объем токенов, ожидаемый размер хранения и ориентировочная стоимость embeddings.
 713. [x] Реализовать формирование отчета dry-run estimate без фактической записи embeddings в БД.
 714. [x] Реализовать backfill `retrieval_chunks` для всех active документов нормативного корпуса.
-715. [ ] Реализовать генерацию и backfill реальных embeddings только для active `retrieval_chunks` по всему active нормативному корпусу.
+715. [x] Реализовать генерацию и backfill реальных embeddings только для active `retrieval_chunks` по всему active нормативному корпусу.
 716. [x] Создать файл `src/qanorm/services/qa/retrieval_service.py`.
 717. [x] Реализовать FTS-поиск по `retrieval_chunks`.
 718. [x] Реализовать vector search по `chunk_embeddings` с привязкой к `retrieval_chunks`.
@@ -868,7 +868,7 @@
 726. [x] Реализовать `top-k`, пагинацию и базовый ranking retrieval-результатов.
 727. [x] Реализовать unit-тесты на chunking, dry-run estimate, hybrid retrieval и ranking.
 728. [x] Реализовать интеграционный тест нормативного retrieval на фикстурах Этапа 1 и проверку согласованности dry-run estimate.
-729. [ ] Выполнить smoke-проверку chunk-based retrieval на наполненной БД Этапа 1.
+729. [x] Выполнить smoke-проверку chunk-based retrieval на наполненной БД Этапа 1.
 
 ### Блок AH. Оркестратор и декомпозиция пользовательского запроса
 
