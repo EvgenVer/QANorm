@@ -78,19 +78,22 @@ class QueryAnalyzer:
         """Analyze the query and fall back to heuristics if the model output is unusable."""
 
         prompt = self.prompt_registry.render("query_analyzer", context=state.build_prompt_context())
-        response = await self.provider.generate(
-            ChatRequest(
-                model=self.provider.model,
-                messages=[
-                    ChatMessage(role="system", content=prompt.text),
-                    ChatMessage(role="user", content=self._analysis_instruction(state.query_text)),
-                ],
-                temperature=0.0,
-                max_tokens=700,
-                metadata={"prompt_metadata": prompt.metadata},
+        try:
+            response = await self.provider.generate(
+                ChatRequest(
+                    model=self.provider.model,
+                    messages=[
+                        ChatMessage(role="system", content=prompt.text),
+                        ChatMessage(role="user", content=self._analysis_instruction(state.query_text)),
+                    ],
+                    temperature=0.0,
+                    max_tokens=700,
+                    metadata={"prompt_metadata": prompt.metadata},
+                )
             )
-        )
-        parsed = self._parse_analysis_response(response.content)
+            parsed = self._parse_analysis_response(response.content)
+        except Exception:
+            parsed = None
         if parsed is None:
             return self._fallback_analysis(state.query_text)
         return parsed

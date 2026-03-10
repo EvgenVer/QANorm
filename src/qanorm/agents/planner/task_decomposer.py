@@ -55,22 +55,25 @@ class QueryTaskDecomposer:
         """Decompose the query into routed subtasks with deterministic fallback."""
 
         prompt = self.prompt_registry.render("task_decomposer", context=state.build_prompt_context())
-        response = await self.provider.generate(
-            ChatRequest(
-                model=self.provider.model,
-                messages=[
-                    ChatMessage(role="system", content=prompt.text),
-                    ChatMessage(
-                        role="user",
-                        content=self._decomposition_instruction(state.query_text, analysis),
-                    ),
-                ],
-                temperature=0.0,
-                max_tokens=900,
-                metadata={"prompt_metadata": prompt.metadata},
+        try:
+            response = await self.provider.generate(
+                ChatRequest(
+                    model=self.provider.model,
+                    messages=[
+                        ChatMessage(role="system", content=prompt.text),
+                        ChatMessage(
+                            role="user",
+                            content=self._decomposition_instruction(state.query_text, analysis),
+                        ),
+                    ],
+                    temperature=0.0,
+                    max_tokens=900,
+                    metadata={"prompt_metadata": prompt.metadata},
+                )
             )
-        )
-        parsed = self._parse_decomposition_response(response.content)
+            parsed = self._parse_decomposition_response(response.content)
+        except Exception:
+            parsed = []
         if parsed:
             return self._normalize_priorities(parsed)
         return self.fallback_subtasks(state.query_text, analysis)
