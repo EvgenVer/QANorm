@@ -17,6 +17,7 @@ from qanorm.repositories.search_events import SearchEventRepository
 from qanorm.repositories.security_events import SecurityEventRepository
 from qanorm.repositories.sources import DocumentSourceRepository, RawArtifactRepository
 from qanorm.repositories.tool_invocations import ToolInvocationRepository
+from qanorm.repositories.trusted_source_cache_entries import TrustedSourceCacheEntryRepository
 from qanorm.repositories.trusted_sources import TrustedSourceRepository
 from qanorm.repositories.verification_reports import VerificationReportRepository
 
@@ -41,6 +42,7 @@ __all__ = [
     "SearchEventRepository",
     "SecurityEventRepository",
     "ToolInvocationRepository",
+    "TrustedSourceCacheEntryRepository",
     "TrustedSourceRepository",
     "UpdateEventRepository",
     "VerificationReportRepository",

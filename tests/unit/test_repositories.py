@@ -25,6 +25,7 @@ from qanorm.models import (
     SearchEvent,
     SecurityEvent,
     ToolInvocation,
+    TrustedSourceCacheEntry,
     TrustedSourceChunk,
     TrustedSourceDocument,
     TrustedSourceSyncRun,
@@ -51,6 +52,7 @@ from qanorm.repositories import (
     SearchEventRepository,
     SecurityEventRepository,
     ToolInvocationRepository,
+    TrustedSourceCacheEntryRepository,
     TrustedSourceRepository,
     UpdateEventRepository,
     VerificationReportRepository,
@@ -402,6 +404,36 @@ def test_freshness_check_repository_lists_results_for_query() -> None:
 
     assert result == expected
     session.execute.assert_called_once()
+
+
+def test_trusted_source_cache_entry_repository_upsert_inserts_new_entry() -> None:
+    session = _mock_session()
+    session.execute.return_value.scalar_one_or_none.return_value = None
+
+    repository = TrustedSourceCacheEntryRepository(session)
+    result = repository.upsert(
+        cache_kind="page",
+        source_id="example_com",
+        source_domain="example.com",
+        cache_key="key",
+        payload_json={"url": "https://example.com/doc"},
+        expires_at=datetime.now(timezone.utc),
+    )
+
+    assert isinstance(result, TrustedSourceCacheEntry)
+    session.add.assert_called_once()
+    session.flush.assert_called_once()
+
+
+def test_trusted_source_cache_entry_repository_delete_expired_flushes() -> None:
+    session = _mock_session()
+    session.execute.return_value.rowcount = 2
+
+    repository = TrustedSourceCacheEntryRepository(session)
+    deleted = repository.delete_expired(now=datetime.now(timezone.utc))
+
+    assert deleted == 2
+    session.flush.assert_called_once()
 
 
 def test_trusted_source_repository_save_document_updates_existing_row() -> None:

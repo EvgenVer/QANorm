@@ -1,4 +1,4 @@
-"""Trusted-source search tool backed by the local trusted-source store."""
+"""Trusted-source search tool backed by online allowlisted retrieval."""
 
 from __future__ import annotations
 
@@ -10,16 +10,16 @@ from qanorm.tools.base import Tool, ToolDefinition, ToolExecutionContext, ToolIn
 
 
 class TrustedSearchTool(Tool):
-    """Search the locally synchronized trusted-source corpus."""
+    """Search approved trusted sources online with bounded shared cache."""
 
     definition = ToolDefinition(
         name="trusted_search",
         scope="trusted_web",
-        description="Search the locally indexed trusted-source corpus.",
+        description="Search allowlisted trusted sources online.",
     )
 
     async def execute(self, context: ToolExecutionContext, payload: dict[str, Any]) -> ToolResult:
-        """Run a bounded lookup against trusted-source chunks and audit the search event."""
+        """Run bounded trusted-source online retrieval and audit the search event."""
 
         query_text = str(payload.get("query_text", "")).strip()
         if not query_text:
@@ -27,7 +27,7 @@ class TrustedSearchTool(Tool):
 
         limit = max(1, min(int(payload.get("limit", 5)), 20))
         allowed_domains = [str(item).strip() for item in payload.get("allowed_domains", []) if str(item).strip()]
-        hits = search_trusted_sources(
+        hits = await search_trusted_sources(
             context.session,
             query_id=context.query_id,
             subtask_id=context.subtask_id,
@@ -37,14 +37,15 @@ class TrustedSearchTool(Tool):
         )
         results = [
             {
-                "chunk_id": str(hit.chunk_id),
-                "document_id": str(hit.document_id),
+                "source_id": hit.source_id,
                 "source_domain": hit.source_domain,
                 "source_url": hit.source_url,
                 "title": hit.title,
                 "locator": hit.locator,
                 "text": hit.text,
+                "language": hit.language,
                 "score": hit.score,
+                "cache_hit": hit.cache_hit,
             }
             for hit in hits
         ]

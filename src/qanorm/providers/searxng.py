@@ -57,6 +57,8 @@ class SearXNGProvider:
             timeout=httpx.Timeout(self.timeout_seconds),
             headers={"User-Agent": self.user_agent},
             follow_redirects=True,
+            # Ignore ambient proxy variables when talking to the local SearXNG instance.
+            trust_env=False,
         ) as client:
             response = await client.get(
                 f"{self.base_url}/search",

@@ -20,6 +20,7 @@ from qanorm.models.retrieval_chunk import RetrievalChunk
 from qanorm.models.search_event import SearchEvent
 from qanorm.models.security_event import SecurityEvent
 from qanorm.models.tool_invocation import ToolInvocation
+from qanorm.models.trusted_source_cache_entry import TrustedSourceCacheEntry
 from qanorm.models.trusted_source_chunk import TrustedSourceChunk
 from qanorm.models.trusted_source_document import TrustedSourceDocument
 from qanorm.models.trusted_source_sync_run import TrustedSourceSyncRun
@@ -47,6 +48,7 @@ __all__ = [
     "SearchEvent",
     "SecurityEvent",
     "ToolInvocation",
+    "TrustedSourceCacheEntry",
     "TrustedSourceChunk",
     "TrustedSourceDocument",
     "TrustedSourceSyncRun",

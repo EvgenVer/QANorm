@@ -19,7 +19,8 @@ from qanorm.workers.stage2 import (
     publish_progress_event,
     qa_noop_job,
     session_lock,
-    trusted_source_sync_job,
+    trusted_source_cache_cleanup_job,
+    trusted_source_prefetch_job,
 )
 from qanorm.workers.bootstrap import run_stage2_worker
 
@@ -43,5 +44,6 @@ __all__ = [
     "qa_noop_job",
     "run_stage2_worker",
     "session_lock",
-    "trusted_source_sync_job",
+    "trusted_source_cache_cleanup_job",
+    "trusted_source_prefetch_job",
 ]

@@ -938,18 +938,18 @@
 780. [x] Определить конфигурационную модель source registry для trusted sources.
 781. [x] Перестроить схему `configs/trusted_sources.yaml` вокруг `defaults` и source cards вместо описания локального corpus sync.
 782. [x] Добавить в `configs/trusted_sources.yaml` две стартовые карточки trusted sources для тестирования: одну русскоязычную и одну англоязычную.
-783. [ ] Создать сущность хранения `trusted_source_cache_entry` и миграцию для bounded shared cache trusted sources.
-784. [ ] Создать repository доступа к `trusted_source_cache_entry` с операциями чтения, записи, TTL-проверки и инвалидирования.
-785. [ ] Рефакторить `src/qanorm/fetchers/trusted_sources.py` из sitemap-sync логики в online source-aware fetch/search слой.
-786. [ ] Реализовать `TrustedSourceRouter`, выбирающий релевантные trusted sources и формирующий search plan для запроса.
-787. [ ] Реализовать online trusted search provider с site-restricted query strategy и поддержкой source-specific query hints.
-788. [ ] Реализовать строгую фильтрацию URL по `allowed_prefixes`, `blocked_prefixes` и canonical URL normalization.
-789. [ ] Реализовать `TrustedPageFetcher` с timeout/retry/rate-limit политиками для approved sources.
-790. [ ] Реализовать `TrustedContentExtractor` с generic-стратегией, source-specific selectors и сохранением language/origin metadata.
-791. [ ] Реализовать разбивку trusted page на временные evidence-fragments без постоянной индексации всего trusted-сайта.
-792. [ ] Реализовать bounded shared cache с TTL для search results, fetched pages и extracted fragments trusted sources.
-793. [ ] Заменить `trusted_source_sync_job` на `trusted_source_cache_cleanup_job` и `trusted_source_prefetch_job`, а также обновить `TrustedSearchTool` и `search_events` под online trusted-source workflow.
-794. [ ] Реализовать unit-тесты на online trusted retrieval, TTL-cache поведение и multilingual trusted sources и выполнить smoke-проверку по одному allowlist-источнику.
+783. [x] Создать сущность хранения `trusted_source_cache_entry` и миграцию для bounded shared cache trusted sources.
+784. [x] Создать repository доступа к `trusted_source_cache_entry` с операциями чтения, записи, TTL-проверки и инвалидирования.
+785. [x] Рефакторить `src/qanorm/fetchers/trusted_sources.py` из sitemap-sync логики в online source-aware fetch/search слой.
+786. [x] Реализовать `TrustedSourceRouter`, выбирающий релевантные trusted sources и формирующий search plan для запроса.
+787. [x] Реализовать online trusted search provider с site-restricted query strategy и поддержкой source-specific query hints.
+788. [x] Реализовать строгую фильтрацию URL по `allowed_prefixes`, `blocked_prefixes` и canonical URL normalization.
+789. [x] Реализовать `TrustedPageFetcher` с timeout/retry/rate-limit политиками для approved sources.
+790. [x] Реализовать `TrustedContentExtractor` с generic-стратегией, source-specific selectors и сохранением language/origin metadata.
+791. [x] Реализовать разбивку trusted page на временные evidence-fragments без постоянной индексации всего trusted-сайта.
+792. [x] Реализовать bounded shared cache с TTL для search results, fetched pages и extracted fragments trusted sources.
+793. [x] Заменить `trusted_source_sync_job` на `trusted_source_cache_cleanup_job` и `trusted_source_prefetch_job`, а также обновить `TrustedSearchTool` и `search_events` под online trusted-source workflow.
+794. [x] Реализовать unit-тесты на online trusted retrieval, TTL-cache поведение и multilingual trusted sources и выполнить smoke-проверку по одному allowlist-источнику.
 
 ### Блок AL. Open web search через self-hosted SearXNG
 

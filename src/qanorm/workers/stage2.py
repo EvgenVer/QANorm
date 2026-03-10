@@ -22,7 +22,7 @@ from qanorm.services.qa.freshness_service import (
 )
 from qanorm.services.qa.open_web_service import normalize_open_web_results_to_evidence, search_open_web
 from qanorm.services.qa.session_service import SessionService
-from qanorm.services.qa.trusted_sources_service import sync_trusted_source
+from qanorm.services.qa.trusted_sources_service import cleanup_trusted_source_cache, prefetch_trusted_sources
 from qanorm.settings import get_qa_config, get_settings
 
 
@@ -196,22 +196,34 @@ async def post_answer_enrichment_job(ctx: dict[str, Any], payload: dict[str, Any
         )
 
 
-async def trusted_source_sync_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    """Synchronize one configured trusted-source adapter into the local store."""
-
-    settings = get_settings()
-    domain = str(payload["source_domain"]).strip().lower()
-    adapter = next((item for item in settings.trusted_sources.sources if item.domain.lower() == domain), None)
-    if adapter is None:
-        raise ValueError(f"Trusted source adapter not found for domain: {domain}")
+async def trusted_source_cache_cleanup_job(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Delete expired trusted-source cache rows."""
 
     with session_scope() as session:
-        result = sync_trusted_source(session, adapter=adapter)
+        deleted = cleanup_trusted_source_cache(session)
+    return {"status": "ok", "deleted_entries": deleted}
+
+
+async def trusted_source_prefetch_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    """Warm trusted-source cache for one query and source subset."""
+
+    query_text = str(payload["query_text"]).strip()
+    if not query_text:
+        raise ValueError("'query_text' is required for trusted_source_prefetch_job")
+    allowed_domains = [str(item).strip() for item in payload.get("allowed_domains", []) if str(item).strip()]
+    limit = int(payload.get("limit", 5))
+    with session_scope() as session:
+        result = await prefetch_trusted_sources(
+            session,
+            query_text=query_text,
+            allowed_domains=allowed_domains,
+            limit=limit,
+        )
     return {
-        "sync_run_id": str(result.sync_run_id),
-        "source_domain": result.source_domain,
-        "discovered_url_count": result.discovered_url_count,
-        "indexed_document_count": result.indexed_document_count,
+        "status": "ok",
+        "source_count": result.source_count,
+        "hit_count": result.hit_count,
+        "cache_hit_count": result.cache_hit_count,
     }
 
 
@@ -269,7 +281,8 @@ class Stage2WorkerSettings:
         freshness_check_job,
         document_refresh_job,
         post_answer_enrichment_job,
-        trusted_source_sync_job,
+        trusted_source_cache_cleanup_job,
+        trusted_source_prefetch_job,
         open_web_research_job,
     ]
     queue_name = "arq:queue"
