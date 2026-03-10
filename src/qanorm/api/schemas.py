@@ -90,6 +90,7 @@ class AnswerResponse(BaseModel):
     answer_text: str
     markdown: str
     answer_format: str
+    answer_mode: str
     coverage_status: str
     has_stale_sources: bool
     has_external_sources: bool

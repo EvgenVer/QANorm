@@ -200,6 +200,7 @@ def _serialize_answer(db: Session, query: QAQuery, answer: QAAnswer | None) -> A
         answer_text=str(metadata.get("answer_text", answer.answer_text)),
         markdown=str(metadata.get("markdown", answer.answer_text)),
         answer_format=answer.answer_format,
+        answer_mode=str(metadata.get("answer_mode", "partial_answer")),
         coverage_status=answer.coverage_status.value,
         has_stale_sources=answer.has_stale_sources,
         has_external_sources=answer.has_external_sources,

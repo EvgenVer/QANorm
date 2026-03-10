@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 from qanorm.agents.answer_synthesizer import StructuredAnswer
-from qanorm.db.types import EvidenceSourceKind, FreshnessCheckStatus, FreshnessStatus, JobStatus, JobType, StatusNormalized
+from qanorm.db.types import AnswerMode, EvidenceSourceKind, FreshnessCheckStatus, FreshnessStatus, JobStatus, JobType, StatusNormalized
 from qanorm.models import Document, DocumentSource, DocumentVersion, FreshnessCheck, IngestionJob, QAEvidence, QAMessage, QAQuery, UpdateEvent
 from qanorm.models.qa_state import EvidenceBundle, QueryState
 from qanorm.parsers.card_parser import DocumentCardData
@@ -319,6 +319,7 @@ def test_annotate_answer_with_freshness_adds_warning_block() -> None:
         answer_text="Base answer",
         markdown="## Answer\n\nBase answer",
         answer_format="markdown",
+        answer_mode=AnswerMode.PARTIAL_ANSWER,
         coverage_status=SimpleNamespace(value="partial"),
         has_stale_sources=False,
         has_external_sources=False,

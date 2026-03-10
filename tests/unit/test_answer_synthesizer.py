@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from qanorm.agents.answer_synthesizer import AnswerSynthesizer
 from qanorm.agents.planner import QueryIntent
-from qanorm.db.types import CoverageStatus, EvidenceSourceKind, FreshnessStatus, MessageRole, QueryStatus
+from qanorm.db.types import AnswerMode, CoverageStatus, EvidenceSourceKind, FreshnessStatus, MessageRole, QueryStatus
 from qanorm.models import Document, QAEvidence, QAMessage, QAQuery
 from qanorm.models.qa_state import EvidenceBundle, QueryState
 from qanorm.prompts.registry import create_prompt_registry
@@ -73,6 +73,7 @@ def test_answer_synthesizer_falls_back_to_evidence_sections_and_prioritizes_norm
     )
 
     assert answer.sections[0].source_kind == EvidenceSourceKind.NORMATIVE
+    assert answer.answer_mode == AnswerMode.PARTIAL_ANSWER
     assert answer.coverage_status == CoverageStatus.PARTIAL
     assert answer.has_external_sources is True
     assert "Ненормативные источники" in answer.markdown
@@ -176,6 +177,7 @@ def test_answer_synthesizer_short_circuits_clarify_path() -> None:
     assert answer.coverage_status == CoverageStatus.INSUFFICIENT
     assert "Уточните" in answer.answer_text
     assert answer.model_name == "intent_gate:clarify"
+    assert answer.answer_mode == AnswerMode.CLARIFY
 
 
 def test_answer_synthesizer_short_circuits_no_retrieval_path() -> None:
@@ -201,6 +203,7 @@ def test_answer_synthesizer_short_circuits_no_retrieval_path() -> None:
     assert answer.coverage_status == CoverageStatus.INSUFFICIENT
     assert "не был отправлен в нормативный retrieval" in answer.answer_text
     assert answer.model_name == "intent_gate:no_retrieval"
+    assert answer.answer_mode == AnswerMode.DECLINE
 
 
 def _build_query_state() -> QueryState:

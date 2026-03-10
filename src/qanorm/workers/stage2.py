@@ -166,6 +166,7 @@ async def process_query_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dic
     with session_scope() as session:
         from qanorm.agents.answer_synthesizer import AnswerSynthesizer
         from qanorm.agents.orchestrator import QueryOrchestrator
+        from qanorm.services.qa.verification_service import VerificationService
 
         query_repository = QAQueryRepository(session)
         subtask_repository = QASubtaskRepository(session)
@@ -187,6 +188,7 @@ async def process_query_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dic
             runtime_config=settings,
         )
         synthesizer = AnswerSynthesizer(session, runtime_config=settings, provider=providers.synthesis)
+        verification_service = VerificationService(session, runtime_config=settings, provider=providers.synthesis)
 
         try:
             planning = await orchestrator.analyze_and_plan(query_id=query_id)
@@ -339,19 +341,34 @@ async def process_query_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dic
                 limitations.append("No evidence was found for this query in the currently available sources.")
             if state.intent == QueryIntent.NO_RETRIEVAL.value:
                 limitations.append("The request was intentionally stopped before retrieval because it is outside the normative retrieval path.")
-            answer = await synthesizer.synthesize(state, limitations=limitations)
+            initial_answer = await synthesizer.synthesize(state, limitations=limitations)
+            answer, outcome = await verification_service.run_bounded_repair_loop(
+                state=state,
+                initial_answer=initial_answer,
+                repair_callback=lambda current_answer, findings: synthesizer.repair_answer(
+                    state,
+                    current_answer=current_answer,
+                    findings=findings,
+                ),
+            )
             synthesizer.persist_answer(query=query, answer=answer)
             await publish_progress_event(
                 redis,
                 query_id=query.id,
                 event="answer_completed",
-                data={"partial_markdown": answer.markdown, "coverage_status": answer.coverage_status.value},
+                data={
+                    "partial_markdown": answer.markdown,
+                    "coverage_status": answer.coverage_status.value,
+                    "answer_mode": answer.answer_mode.value,
+                    "verification_blocked": outcome.has_blocking_failures,
+                },
             )
             return {
                 "status": "ok",
                 "query_id": str(query.id),
                 "evidence_count": len(state.evidence_bundle.all_items),
                 "coverage_status": answer.coverage_status.value,
+                "answer_mode": answer.answer_mode.value,
             }
         except Exception as exc:
             query_repository.update_state(

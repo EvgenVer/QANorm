@@ -141,6 +141,15 @@ class CoverageStatus(StrEnum):
     INSUFFICIENT = "insufficient"
 
 
+class AnswerMode(StrEnum):
+    """User-facing answer modes selected after retrieval and verification."""
+
+    DIRECT_ANSWER = "direct_answer"
+    PARTIAL_ANSWER = "partial_answer"
+    CLARIFY = "clarify"
+    DECLINE = "decline"
+
+
 class VerificationResult(StrEnum):
     """Possible outcomes for verification checks."""
 

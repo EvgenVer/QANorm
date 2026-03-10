@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from qanorm.audit import AuditWriter
 from qanorm.agents.planner.query_intent import QueryIntent
-from qanorm.db.types import AnswerStatus, CoverageStatus, EvidenceSourceKind, FreshnessStatus, MessageRole, QueryStatus
+from qanorm.db.types import AnswerMode, AnswerStatus, CoverageStatus, EvidenceSourceKind, FreshnessStatus, MessageRole, QueryStatus
 from qanorm.models import QAAnswer, QAEvidence, QAMessage, QAQuery
 from qanorm.models.qa_state import EvidenceBundle, QueryState
 from qanorm.prompts.registry import PromptRegistry, create_prompt_registry
@@ -66,6 +66,7 @@ class StructuredAnswer:
     answer_text: str
     markdown: str
     answer_format: str
+    answer_mode: AnswerMode
     coverage_status: CoverageStatus
     has_stale_sources: bool
     has_external_sources: bool
@@ -82,6 +83,7 @@ class StructuredAnswer:
             "answer_text": self.answer_text,
             "markdown": self.markdown,
             "answer_format": self.answer_format,
+            "answer_mode": self.answer_mode.value,
             "coverage_status": self.coverage_status.value,
             "has_stale_sources": self.has_stale_sources,
             "has_external_sources": self.has_external_sources,
@@ -143,9 +145,11 @@ class AnswerSynthesizer:
         if state.intent == QueryIntent.CLARIFY.value:
             return self._build_clarify_answer(state, limitations=limitations_list)
         if state.intent == QueryIntent.NO_RETRIEVAL.value and not state.evidence_bundle.all_items:
-            return self._build_no_retrieval_answer(state, limitations=limitations_list)
+            return self._build_decline_answer(state, limitations=limitations_list)
+
         prompt = self.prompt_registry.render("answer_synthesizer", context=state.build_prompt_context())
         response_content = ""
+        response_model_name = f"{self.provider.model}:fallback"
         try:
             response = await self.provider.generate(
                 ChatRequest(
@@ -169,28 +173,38 @@ class AnswerSynthesizer:
                 )
             )
             response_content = response.content
+            response_model_name = self.provider.model
         except Exception:
             response = None
-        sections = self._parse_sections(response_content)
-        if not sections:
-            sections = self._fallback_sections(state.evidence_bundle)
+
+        sections = self._parse_sections(response_content) or self._fallback_sections(state.evidence_bundle)
+        if not self._has_sufficient_primary_evidence(state):
+            return self._build_evidence_limited_answer(
+                state,
+                sections=sections,
+                assumptions=assumptions_list,
+                limitations=limitations_list + ["Недостаточно primary evidence для уверенного нормативного ответа."],
+                model_name=response_model_name,
+            )
 
         prioritized_sections = self._prioritize_sections(sections)
         warnings = self._build_warnings(state.evidence_bundle, limitations_list)
         coverage_status = self._determine_coverage_status(state.query_text, state.evidence_bundle, limitations_list)
+        answer_mode = self._determine_answer_mode(state, coverage_status=coverage_status, limitations=limitations_list)
         markdown = self._render_markdown(
-            query_text=state.query_text,
             sections=prioritized_sections,
             assumptions=assumptions_list,
             limitations=limitations_list,
             warnings=warnings,
             coverage_status=coverage_status,
+            answer_mode=answer_mode,
         )
         answer_text = "\n\n".join(section.body for section in prioritized_sections).strip()
         return StructuredAnswer(
             answer_text=answer_text,
             markdown=markdown,
             answer_format="markdown",
+            answer_mode=answer_mode,
             coverage_status=coverage_status,
             has_stale_sources=any(item.freshness_status != FreshnessStatus.FRESH for item in state.evidence_bundle.all_items),
             has_external_sources=bool(state.evidence_bundle.trusted_web or state.evidence_bundle.open_web),
@@ -198,77 +212,23 @@ class AnswerSynthesizer:
             limitations=limitations_list,
             warnings=warnings,
             sections=prioritized_sections,
-            model_name=self.provider.model if response is not None else f"{self.provider.model}:fallback",
+            model_name=response_model_name if response is None else self.provider.model,
         )
 
-    def _build_clarify_answer(self, state: QueryState, *, limitations: list[str]) -> StructuredAnswer:
-        """Return a deterministic clarifying answer when the intent gate blocks retrieval."""
+    async def repair_answer(
+        self,
+        state: QueryState,
+        *,
+        current_answer: StructuredAnswer,
+        findings: list[Any],
+    ) -> StructuredAnswer:
+        """Run one bounded repair pass by turning findings into explicit limitations."""
 
-        clarification_question = state.clarification_question or "Уточните документ, локатор или инженерный аспект запроса."
-        section = AnswerSection(
-            heading="Нужно уточнение",
-            body=clarification_question,
-            source_kind=EvidenceSourceKind.NORMATIVE,
-            citations=[],
-        )
-        warnings = ["Запрос остановлен на intent gate до запуска retrieval, чтобы избежать шумного ответа."]
-        markdown = self._render_markdown(
-            query_text=state.query_text,
-            sections=[section],
-            assumptions=[],
-            limitations=limitations,
-            warnings=warnings,
-            coverage_status=CoverageStatus.INSUFFICIENT,
-        )
-        return StructuredAnswer(
-            answer_text=clarification_question,
-            markdown=markdown,
-            answer_format="markdown",
-            coverage_status=CoverageStatus.INSUFFICIENT,
-            has_stale_sources=False,
-            has_external_sources=False,
-            assumptions=[],
-            limitations=limitations,
-            warnings=warnings,
-            sections=[section],
-            model_name="intent_gate:clarify",
-        )
-
-    def _build_no_retrieval_answer(self, state: QueryState, *, limitations: list[str]) -> StructuredAnswer:
-        """Return an honest limited answer for requests outside the retrieval path."""
-
-        body = (
-            "Запрос не был отправлен в нормативный retrieval. "
-            "Текущая конфигурация Stage 2 отвечает только на инженерные запросы, "
-            "которые можно подтвердить нормативными или явно разрешенными вспомогательными источниками."
-        )
-        section = AnswerSection(
-            heading="Ответ ограничен",
-            body=body,
-            source_kind=EvidenceSourceKind.NORMATIVE,
-            citations=[],
-        )
-        warnings = ["Retrieval не запускался, потому что запрос признан ненормативным или недостаточно профильным для этой системы."]
-        markdown = self._render_markdown(
-            query_text=state.query_text,
-            sections=[section],
-            assumptions=[],
-            limitations=limitations,
-            warnings=warnings,
-            coverage_status=CoverageStatus.INSUFFICIENT,
-        )
-        return StructuredAnswer(
-            answer_text=body,
-            markdown=markdown,
-            answer_format="markdown",
-            coverage_status=CoverageStatus.INSUFFICIENT,
-            has_stale_sources=False,
-            has_external_sources=False,
-            assumptions=[],
-            limitations=limitations,
-            warnings=warnings,
-            sections=[section],
-            model_name="intent_gate:no_retrieval",
+        additional_limitations = [item.message for item in findings if getattr(item, "message", "").strip()]
+        return await self.synthesize(
+            state,
+            assumptions=list(current_answer.assumptions),
+            limitations=[*current_answer.limitations, *additional_limitations],
         )
 
     def persist_answer(self, *, query: QAQuery, answer: StructuredAnswer) -> tuple[QAAnswer, QAMessage]:
@@ -311,9 +271,122 @@ class AnswerSynthesizer:
                     "prompt_template_name": "answer_synthesizer",
                     "prompt_version": self.prompt_registry.resolve_version("answer_synthesizer"),
                     "coverage_status": answer.coverage_status.value,
+                    "answer_mode": answer.answer_mode.value,
                 },
             )
         return saved_answer, assistant_message
+
+    def _build_clarify_answer(self, state: QueryState, *, limitations: list[str]) -> StructuredAnswer:
+        """Return a deterministic clarifying answer when the intent gate blocks retrieval."""
+
+        clarification_question = state.clarification_question or "Уточните документ, локатор или инженерный аспект запроса."
+        section = AnswerSection(
+            heading="Нужно уточнение",
+            body=clarification_question,
+            source_kind=EvidenceSourceKind.NORMATIVE,
+            citations=[],
+        )
+        warnings = ["Запрос остановлен на intent gate до запуска retrieval, чтобы избежать шумного ответа."]
+        markdown = self._render_markdown(
+            sections=[section],
+            assumptions=[],
+            limitations=limitations,
+            warnings=warnings,
+            coverage_status=CoverageStatus.INSUFFICIENT,
+            answer_mode=AnswerMode.CLARIFY,
+        )
+        return StructuredAnswer(
+            answer_text=clarification_question,
+            markdown=markdown,
+            answer_format="markdown",
+            answer_mode=AnswerMode.CLARIFY,
+            coverage_status=CoverageStatus.INSUFFICIENT,
+            has_stale_sources=False,
+            has_external_sources=False,
+            assumptions=[],
+            limitations=limitations,
+            warnings=warnings,
+            sections=[section],
+            model_name="intent_gate:clarify",
+        )
+
+    def _build_decline_answer(self, state: QueryState, *, limitations: list[str]) -> StructuredAnswer:
+        """Return an honest limited answer for requests outside the retrieval path."""
+
+        body = (
+            "Запрос не был отправлен в нормативный retrieval. "
+            "Текущая конфигурация Stage 2 отвечает только на инженерные запросы, "
+            "которые можно подтвердить нормативными или явно разрешенными вспомогательными источниками."
+        )
+        section = AnswerSection(
+            heading="Ответ ограничен",
+            body=body,
+            source_kind=EvidenceSourceKind.NORMATIVE,
+            citations=[],
+        )
+        warnings = [
+            "Retrieval не запускался, потому что запрос признан ненормативным или недостаточно профильным для этой системы."
+        ]
+        markdown = self._render_markdown(
+            sections=[section],
+            assumptions=[],
+            limitations=limitations,
+            warnings=warnings,
+            coverage_status=CoverageStatus.INSUFFICIENT,
+            answer_mode=AnswerMode.DECLINE,
+        )
+        return StructuredAnswer(
+            answer_text=body,
+            markdown=markdown,
+            answer_format="markdown",
+            answer_mode=AnswerMode.DECLINE,
+            coverage_status=CoverageStatus.INSUFFICIENT,
+            has_stale_sources=False,
+            has_external_sources=False,
+            assumptions=[],
+            limitations=limitations,
+            warnings=warnings,
+            sections=[section],
+            model_name="intent_gate:no_retrieval",
+        )
+
+    def _build_evidence_limited_answer(
+        self,
+        state: QueryState,
+        *,
+        sections: list[AnswerSection],
+        assumptions: list[str],
+        limitations: list[str],
+        model_name: str,
+    ) -> StructuredAnswer:
+        """Downgrade synthesis output when retrieval did not produce enough primary evidence."""
+
+        answer_mode = AnswerMode.PARTIAL_ANSWER if state.evidence_bundle.all_items else AnswerMode.DECLINE
+        prioritized_sections = self._prioritize_sections(sections)
+        warnings = self._build_warnings(state.evidence_bundle, limitations)
+        warnings.append("Final direct answer was blocked because retrieval did not produce sufficient primary evidence.")
+        markdown = self._render_markdown(
+            sections=prioritized_sections,
+            assumptions=assumptions,
+            limitations=limitations,
+            warnings=warnings,
+            coverage_status=CoverageStatus.INSUFFICIENT,
+            answer_mode=answer_mode,
+        )
+        return StructuredAnswer(
+            answer_text="\n\n".join(section.body for section in prioritized_sections).strip(),
+            markdown=markdown,
+            answer_format="markdown",
+            answer_mode=answer_mode,
+            coverage_status=CoverageStatus.INSUFFICIENT,
+            has_stale_sources=any(item.freshness_status != FreshnessStatus.FRESH for item in state.evidence_bundle.all_items),
+            has_external_sources=bool(state.evidence_bundle.trusted_web or state.evidence_bundle.open_web),
+            assumptions=list(assumptions),
+            limitations=list(limitations),
+            warnings=warnings,
+            sections=prioritized_sections,
+            model_name=model_name,
+        )
 
     def _build_instruction(
         self,
@@ -324,7 +397,7 @@ class AnswerSynthesizer:
         assumptions: list[str],
         limitations: list[str],
     ) -> str:
-        """Constrain the synthesis model to a compact JSON response."""
+        """Request structured output but tolerate markdown when JSON is not feasible."""
 
         schema = {
             "sections": [
@@ -336,13 +409,14 @@ class AnswerSynthesizer:
             ]
         }
         return (
-            "Return only one JSON object using this schema:\n"
+            "Prefer one JSON object using this schema. If JSON is not feasible, return markdown with `###` headings only:\n"
             f"{json.dumps(schema, ensure_ascii=False)}\n\n"
             f"Query:\n{query_text}\n\n"
             f"Session summary:\n{state.session_summary or 'none'}\n\n"
             "Recent messages:\n"
             f"{self._render_recent_messages(state)}\n\n"
             f"Normative evidence count: {len(evidence_bundle.normative)}\n"
+            f"Primary normative evidence count: {len(state.evidence_bundle.primary_normative)}\n"
             f"Trusted web evidence count: {len(evidence_bundle.trusted_web)}\n"
             f"Open web evidence count: {len(evidence_bundle.open_web)}\n"
             f"Assumptions: {json.dumps(assumptions, ensure_ascii=False)}\n"
@@ -350,7 +424,21 @@ class AnswerSynthesizer:
         )
 
     def _parse_sections(self, content: str) -> list[AnswerSection]:
-        """Parse model output when it respects the JSON contract."""
+        """Parse JSON first, then markdown sections, then a plain-text fallback."""
+
+        json_sections = self._parse_json_sections(content)
+        if json_sections:
+            return json_sections
+        markdown_sections = self._parse_markdown_sections(content)
+        if markdown_sections:
+            return markdown_sections
+        plain_text = normalize_whitespace(content)
+        if not plain_text or len(plain_text) < 30:
+            return []
+        return [AnswerSection(heading="Краткий вывод", body=plain_text, source_kind=EvidenceSourceKind.NORMATIVE, citations=[])]
+
+    def _parse_json_sections(self, content: str) -> list[AnswerSection]:
+        """Parse model output when it respects the preferred JSON contract."""
 
         match = JSON_OBJECT_RE.search(content)
         if not match:
@@ -375,11 +463,40 @@ class AnswerSynthesizer:
             heading = normalize_whitespace(str(item.get("heading", "")).strip())
             if not heading or not body:
                 return []
+            sections.append(AnswerSection(heading=heading, body=body, source_kind=source_kind, citations=[]))
+        return sections
+
+    def _parse_markdown_sections(self, content: str) -> list[AnswerSection]:
+        """Recover sections from markdown-style model output."""
+
+        sections: list[AnswerSection] = []
+        current_heading: str | None = None
+        current_lines: list[str] = []
+        for raw_line in content.splitlines():
+            line = normalize_whitespace(raw_line)
+            if not line:
+                continue
+            if line.startswith("### "):
+                if current_heading and current_lines:
+                    sections.append(
+                        AnswerSection(
+                            heading=current_heading,
+                            body="\n".join(current_lines).strip(),
+                            source_kind=EvidenceSourceKind.NORMATIVE,
+                            citations=[],
+                        )
+                    )
+                current_heading = line.removeprefix("### ").strip()
+                current_lines = []
+                continue
+            if current_heading is not None:
+                current_lines.append(line)
+        if current_heading and current_lines:
             sections.append(
                 AnswerSection(
-                    heading=heading,
-                    body=body,
-                    source_kind=source_kind,
+                    heading=current_heading,
+                    body="\n".join(current_lines).strip(),
+                    source_kind=EvidenceSourceKind.NORMATIVE,
                     citations=[],
                 )
             )
@@ -439,12 +556,11 @@ class AnswerSynthesizer:
     def _build_citations(self, evidence_rows: list[QAEvidence], *, is_normative: bool) -> list[AnswerCitation]:
         """Convert evidence rows into display-ready citations."""
 
-        citations = []
+        citations: list[AnswerCitation] = []
         for item in evidence_rows:
-            title = self._evidence_title(item)
             citations.append(
                 AnswerCitation(
-                    title=title,
+                    title=self._evidence_title(item),
                     edition_label=item.edition_label,
                     locator=item.locator,
                     quote=item.quote,
@@ -493,27 +609,48 @@ class AnswerSynthesizer:
             return CoverageStatus.PARTIAL
         return CoverageStatus.COMPLETE
 
+    def _determine_answer_mode(
+        self,
+        state: QueryState,
+        *,
+        coverage_status: CoverageStatus,
+        limitations: list[str],
+    ) -> AnswerMode:
+        """Map retrieval confidence and coverage into one user-facing answer mode."""
+
+        if state.intent == QueryIntent.CLARIFY.value:
+            return AnswerMode.CLARIFY
+        if state.intent == QueryIntent.NO_RETRIEVAL.value:
+            return AnswerMode.DECLINE
+        if coverage_status == CoverageStatus.COMPLETE and not limitations:
+            return AnswerMode.DIRECT_ANSWER
+        return AnswerMode.PARTIAL_ANSWER
+
+    def _has_sufficient_primary_evidence(self, state: QueryState) -> bool:
+        """Require explicit primary evidence before allowing a direct normative answer."""
+
+        if state.evidence_bundle.primary_normative:
+            return True
+        # Legacy tests and pre-reranking evidence rows may not carry a tier yet.
+        return bool(state.evidence_bundle.normative and not state.evidence_bundle.secondary_normative)
+
     def _render_markdown(
         self,
         *,
-        query_text: str,
         sections: list[AnswerSection],
         assumptions: list[str],
         limitations: list[str],
         warnings: list[str],
         coverage_status: CoverageStatus,
+        answer_mode: AnswerMode,
     ) -> str:
         """Render the structured answer into one markdown document."""
 
-        parts = ["## Ответ"]
+        parts = ["## Ответ", f"Режим ответа: `{answer_mode.value}`."]
         for section in sections:
             parts.append(f"### {section.heading}\n\n{section.body}")
             if section.citations:
-                parts.append(
-                    "\n".join(
-                        [f"- {citation.render()}" for citation in section.citations]
-                    )
-                )
+                parts.append("\n".join(f"- {citation.render()}" for citation in section.citations))
         if assumptions:
             parts.append("### Допущения\n\n" + "\n".join(f"- {item}" for item in assumptions))
         if limitations:

@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 
 from qanorm.agents.answer_synthesizer import AnswerCitation, AnswerSection, StructuredAnswer
-from qanorm.db.types import CoverageStatus, EvidenceSourceKind, FreshnessStatus, MessageRole, QueryStatus, VerificationResult
+from qanorm.db.types import AnswerMode, CoverageStatus, EvidenceSourceKind, FreshnessStatus, MessageRole, QueryStatus, VerificationResult
 from qanorm.models import Document, QAEvidence, QAMessage
 from qanorm.models.qa_state import EvidenceBundle, QueryState
 from qanorm.security.guards import SessionIsolationGuard, inspect_retrieved_content, inspect_user_input, sanitize_external_text
@@ -70,6 +70,7 @@ def test_verification_service_flags_missing_normative_citations_and_persists_rep
         answer_text="Нормативный вывод без ссылок.",
         markdown="Нормативный вывод без ссылок.",
         answer_format="markdown",
+        answer_mode=AnswerMode.DIRECT_ANSWER,
         coverage_status=CoverageStatus.COMPLETE,
         has_stale_sources=False,
         has_external_sources=False,
@@ -99,6 +100,7 @@ def test_verification_service_flags_incorrect_external_labeling() -> None:
         answer_text="Практическая рекомендация.",
         markdown="Практическая рекомендация.",
         answer_format="markdown",
+        answer_mode=AnswerMode.PARTIAL_ANSWER,
         coverage_status=CoverageStatus.COMPLETE,
         has_stale_sources=False,
         has_external_sources=True,
@@ -142,6 +144,7 @@ def test_verification_service_stops_repair_loop_when_fingerprints_repeat() -> No
         answer_text="Unsupported claim without evidence overlap.",
         markdown="Unsupported claim without evidence overlap.",
         answer_format="markdown",
+        answer_mode=AnswerMode.DIRECT_ANSWER,
         coverage_status=CoverageStatus.COMPLETE,
         has_stale_sources=False,
         has_external_sources=False,

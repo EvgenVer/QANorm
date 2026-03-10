@@ -7,21 +7,19 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
-from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from qanorm.agents.answer_synthesizer import StructuredAnswer
 from qanorm.db.types import QueryStatus, VerificationResult
 from qanorm.models import VerificationReport
-from qanorm.models.qa_state import EvidenceBundle, QueryState
+from qanorm.models.qa_state import QueryState
 from qanorm.observability import increment_event, set_verification_metric
 from qanorm.prompts.registry import PromptRegistry, create_prompt_registry
 from qanorm.providers import create_provider_registry
 from qanorm.providers.base import ChatMessage, ChatModelProvider, ChatRequest, create_role_bound_providers
 from qanorm.repositories import QAAnswerRepository, QAQueryRepository, VerificationReportRepository
 from qanorm.security.guards import (
-    SecurityDecision,
     SecurityFinding,
     SessionIsolationGuard,
     enforce_tool_call_budget,
@@ -80,7 +78,13 @@ class VerificationOutcome:
         """Serialize findings into a DB-friendly structure."""
 
         return [
-            {"kind": item.kind, "result": item.result.value, "message": item.message, "repairable": item.repairable, "details": item.details}
+            {
+                "kind": item.kind,
+                "result": item.result.value,
+                "message": item.message,
+                "repairable": item.repairable,
+                "details": item.details,
+            }
             for item in self.findings
         ] + [
             {
@@ -126,25 +130,22 @@ class VerificationService:
         self.query_repository = query_repository or QAQueryRepository(session)
         self.session_isolation_guard = session_isolation_guard or SessionIsolationGuard()
 
-    async def verify_answer(
-        self,
-        *,
-        state: QueryState,
-        answer: StructuredAnswer,
-    ) -> VerificationOutcome:
+    async def verify_answer(self, *, state: QueryState, answer: StructuredAnswer) -> VerificationOutcome:
         """Run hybrid verification against one synthesized answer."""
 
         citation_findings = await self._audit_citations(state=state, answer=answer)
         coverage_findings = await self._audit_coverage(state=state, answer=answer)
         hallucination_findings = await self._audit_hallucinations(state=state, answer=answer)
         source_labeling_findings = self._validate_source_labeling(answer)
-        security_findings = self._run_security_checks(state=state, answer=answer)
+        primary_evidence_findings = self._validate_primary_evidence(state=state, answer=answer)
+        security_findings = self._run_security_checks(state=state)
 
         findings = [
             *citation_findings,
             *coverage_findings,
             *hallucination_findings,
             *source_labeling_findings,
+            *primary_evidence_findings,
         ]
         outcome = VerificationOutcome(
             coverage_result=_max_result(coverage_findings),
@@ -202,17 +203,19 @@ class VerificationService:
                 previous_findings_fingerprint=previous_findings_fingerprint,
                 attempt_index=attempt_index,
             ):
-                return self._degrade_answer(current_answer, outcome), outcome
+                return self._degrade_answer(current_answer), outcome
 
             state.repair_attempt_count += 1
             current_answer = await repair_callback(current_answer, outcome.repairable_findings)
 
         assert best_outcome is not None
-        return self._degrade_answer(current_answer, best_outcome), best_outcome
+        return self._degrade_answer(current_answer), best_outcome
 
     async def _audit_citations(self, *, state: QueryState, answer: StructuredAnswer) -> list[VerificationFinding]:
         """Audit presence and shape of citations for normative sections."""
 
+        if answer.answer_mode.value in {"clarify", "decline"}:
+            return []
         findings: list[VerificationFinding] = []
         for section in answer.sections:
             if section.source_kind.value == "normative" and not section.citations:
@@ -240,6 +243,8 @@ class VerificationService:
     async def _audit_coverage(self, *, state: QueryState, answer: StructuredAnswer) -> list[VerificationFinding]:
         """Estimate whether the answer covers the main aspects of the question."""
 
+        if answer.answer_mode.value in {"clarify", "decline"}:
+            return []
         aspects = [normalize_whitespace(item) for item in QUESTION_SPLIT_RE.split(state.query_text) if normalize_whitespace(item)]
         haystack = normalize_whitespace(" ".join(section.body for section in answer.sections)).casefold()
         findings: list[VerificationFinding] = []
@@ -260,6 +265,8 @@ class VerificationService:
     async def _audit_hallucinations(self, *, state: QueryState, answer: StructuredAnswer) -> list[VerificationFinding]:
         """Check whether answer sentences are grounded in the collected evidence."""
 
+        if answer.answer_mode.value in {"clarify", "decline"}:
+            return []
         evidence_tokens = set().union(*(_extract_tokens(item.quote or item.chunk_text or "") for item in state.evidence_bundle.all_items))
         findings: list[VerificationFinding] = []
         for sentence in SENTENCE_SPLIT_RE.split(answer.answer_text):
@@ -310,7 +317,25 @@ class VerificationService:
                     )
         return findings
 
-    def _run_security_checks(self, *, state: QueryState, answer: StructuredAnswer) -> list[SecurityFinding]:
+    def _validate_primary_evidence(self, *, state: QueryState, answer: StructuredAnswer) -> list[VerificationFinding]:
+        """Block direct answers when retrieval did not produce sufficient primary evidence."""
+
+        if answer.answer_mode.value != "direct_answer":
+            return []
+        if state.evidence_bundle.primary_normative:
+            return []
+        if state.evidence_bundle.normative and not state.evidence_bundle.secondary_normative:
+            return []
+        return [
+            VerificationFinding(
+                kind="primary_evidence",
+                result=VerificationResult.FAIL,
+                message="Direct answer is not allowed without sufficient primary evidence.",
+                repairable=False,
+            )
+        ]
+
+    def _run_security_checks(self, *, state: QueryState) -> list[SecurityFinding]:
         """Run safety guards over user input, evidence, tool usage, and session isolation."""
 
         findings: list[SecurityFinding] = []
@@ -445,6 +470,8 @@ class VerificationService:
 
         if not outcome.repairable_findings:
             return True
+        if not self._can_attempt_repair(state):
+            return True
         if state.repair_attempt_count >= max_verification_retries:
             return True
         if attempt_index + 1 >= max_total_attempts:
@@ -457,15 +484,26 @@ class VerificationService:
             return True
         return False
 
-    def _degrade_answer(self, answer: StructuredAnswer, outcome: VerificationOutcome) -> StructuredAnswer:
+    def _can_attempt_repair(self, state: QueryState) -> bool:
+        """Allow repair only when evidence is present and not obviously weak."""
+
+        if not state.evidence_bundle.all_items:
+            return False
+        if state.evidence_bundle.normative and not state.evidence_bundle.primary_normative and state.evidence_bundle.secondary_normative:
+            return False
+        return True
+
+    def _degrade_answer(self, answer: StructuredAnswer) -> StructuredAnswer:
         """Return a clearly limited answer when verification cannot be improved further."""
 
         warnings = list(answer.warnings)
         warnings.append("Ответ ограничен verification layer: часть утверждений требует дополнительной проверки.")
+        answer_mode = answer.answer_mode if answer.answer_mode.value != "direct_answer" else type(answer.answer_mode).PARTIAL_ANSWER
         return StructuredAnswer(
             answer_text=answer.answer_text,
             markdown=answer.markdown + "\n\n### Ограничения verification\n\n- Часть выводов требует ручной проверки.",
             answer_format=answer.answer_format,
+            answer_mode=answer_mode,
             coverage_status=answer.coverage_status,
             has_stale_sources=answer.has_stale_sources,
             has_external_sources=answer.has_external_sources,

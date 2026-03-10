@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from qanorm.agents.answer_synthesizer import AnswerCitation, AnswerSection, StructuredAnswer
-from qanorm.db.types import CoverageStatus, EvidenceSourceKind, FreshnessStatus, MessageRole, QueryStatus, VerificationResult
+from qanorm.db.types import AnswerMode, CoverageStatus, EvidenceSourceKind, FreshnessStatus, MessageRole, QueryStatus, VerificationResult
 from qanorm.models import Document, QAEvidence, QAMessage
 from qanorm.models.qa_state import EvidenceBundle, QueryState
 from qanorm.security.guards import SessionIsolationGuard
@@ -66,6 +66,7 @@ def test_409_integration_bounded_repair_loop_recovers_from_repairable_citation_i
         answer_text="Bridge and culvert loads shall be evaluated using the active design provisions.",
         markdown="Bridge and culvert loads shall be evaluated using the active design provisions.",
         answer_format="markdown",
+        answer_mode=AnswerMode.DIRECT_ANSWER,
         coverage_status=CoverageStatus.COMPLETE,
         has_stale_sources=False,
         has_external_sources=False,
@@ -89,6 +90,7 @@ def test_409_integration_bounded_repair_loop_recovers_from_repairable_citation_i
             answer_text=current_answer.answer_text,
             markdown=current_answer.markdown,
             answer_format=current_answer.answer_format,
+            answer_mode=current_answer.answer_mode,
             coverage_status=current_answer.coverage_status,
             has_stale_sources=current_answer.has_stale_sources,
             has_external_sources=current_answer.has_external_sources,
@@ -146,6 +148,7 @@ def test_410_integration_bounded_repair_loop_stops_when_findings_do_not_improve(
         answer_text="Bridge and culvert loads shall be evaluated using the active design provisions.",
         markdown="Bridge and culvert loads shall be evaluated using the active design provisions.",
         answer_format="markdown",
+        answer_mode=AnswerMode.DIRECT_ANSWER,
         coverage_status=CoverageStatus.COMPLETE,
         has_stale_sources=False,
         has_external_sources=False,
@@ -216,6 +219,7 @@ def test_412_integration_detects_prompt_injection_in_retrieved_content_and_enfor
         answer_text="Adaptive facade systems need staged verification.",
         markdown="Adaptive facade systems need staged verification.",
         answer_format="markdown",
+        answer_mode=AnswerMode.PARTIAL_ANSWER,
         coverage_status=CoverageStatus.COMPLETE,
         has_stale_sources=False,
         has_external_sources=True,
@@ -314,6 +318,7 @@ def _build_safe_normative_answer() -> StructuredAnswer:
         answer_text="Bridge and culvert loads shall be evaluated using the active design provisions.",
         markdown="Bridge and culvert loads shall be evaluated using the active design provisions.",
         answer_format="markdown",
+        answer_mode=AnswerMode.DIRECT_ANSWER,
         coverage_status=CoverageStatus.COMPLETE,
         has_stale_sources=False,
         has_external_sources=False,
