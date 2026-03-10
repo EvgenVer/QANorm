@@ -17,6 +17,7 @@ class CreateSessionRequest(BaseModel):
     channel: SessionChannel
     external_user_id: str | None = None
     external_chat_id: str | None = None
+    replace_existing: bool = False
 
 
 class SessionResponse(BaseModel):
@@ -104,9 +105,11 @@ class EvidenceResponse(BaseModel):
 
     id: UUID
     source_kind: str
+    source_title: str | None = None
     source_url: str | None = None
     source_domain: str | None = None
     document_id: UUID | None = None
+    document_title: str | None = None
     document_version_id: UUID | None = None
     chunk_id: UUID | None = None
     locator: str | None = None

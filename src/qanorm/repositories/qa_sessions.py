@@ -50,6 +50,32 @@ class QASessionRepository:
         stmt = stmt.order_by(QASession.created_at.desc()).limit(1)
         return self.session.execute(stmt).scalar_one_or_none()
 
+    def list_by_channel_identifiers(
+        self,
+        channel: SessionChannel,
+        *,
+        external_user_id: str | None = None,
+        external_chat_id: str | None = None,
+    ) -> list[QASession]:
+        """Load all sessions bound to one channel-scoped external identity."""
+
+        if external_user_id is None and external_chat_id is None:
+            raise ValueError("At least one external identifier must be provided.")
+
+        stmt = select(QASession).where(QASession.channel == channel)
+        if external_user_id is not None:
+            stmt = stmt.where(QASession.external_user_id == external_user_id)
+        if external_chat_id is not None:
+            stmt = stmt.where(QASession.external_chat_id == external_chat_id)
+        stmt = stmt.order_by(QASession.created_at.desc())
+        return list(self.session.execute(stmt).scalars().all())
+
+    def delete(self, qa_session: QASession) -> None:
+        """Delete one session root and rely on FK cascades for child rows."""
+
+        self.session.delete(qa_session)
+        self.session.flush()
+
     def update_session_state(
         self,
         qa_session: QASession,

@@ -35,11 +35,17 @@ class SessionService:
         channel: SessionChannel,
         external_user_id: str | None = None,
         external_chat_id: str | None = None,
+        replace_existing: bool = False,
         now: datetime | None = None,
     ) -> QASession:
         """Create a new active session with a calculated expiration deadline."""
 
         session_created_at = now or datetime.now(timezone.utc)
+        if replace_existing and channel == SessionChannel.WEB:
+            self._replace_existing_web_sessions(
+                external_user_id=external_user_id,
+                external_chat_id=external_chat_id,
+            )
         qa_session = QASession(
             id=uuid4(),
             channel=channel,
@@ -95,6 +101,25 @@ class SessionService:
         if expired_sessions:
             self.session.flush()
         return len(expired_sessions)
+
+    def _replace_existing_web_sessions(
+        self,
+        *,
+        external_user_id: str | None,
+        external_chat_id: str | None,
+    ) -> None:
+        """Delete previous web sessions for the same browser-scoped identity."""
+
+        if external_user_id is None and external_chat_id is None:
+            raise ValueError("Replacing a web session requires an external identifier.")
+
+        existing_sessions = self.repository.list_by_channel_identifiers(
+            SessionChannel.WEB,
+            external_user_id=external_user_id,
+            external_chat_id=external_chat_id,
+        )
+        for existing_session in existing_sessions:
+            self.repository.delete(existing_session)
 
     def _calculate_expiration(self, base_time: datetime) -> datetime:
         """Calculate the session expiration deadline from runtime config."""

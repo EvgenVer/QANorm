@@ -38,19 +38,24 @@ class _FakePubSub:
 
 
 class _FakeArqRedis:
+    def __init__(self) -> None:
+        self.last_enqueue = None
+
     async def enqueue_job(self, *args, **kwargs):
+        self.last_enqueue = (args, kwargs)
         return object()
 
 
-def _build_client(db: MagicMock | None = None) -> tuple[TestClient, MagicMock, _FakeRedis]:
+def _build_client(db: MagicMock | None = None) -> tuple[TestClient, MagicMock, _FakeRedis, _FakeArqRedis]:
     app = create_app()
     db_session = db or MagicMock()
     fake_redis = _FakeRedis()
+    fake_arq = _FakeArqRedis()
 
     app.dependency_overrides[get_db_session] = lambda: db_session
     app.dependency_overrides[get_redis_client] = lambda: fake_redis
-    app.dependency_overrides[get_arq_redis] = lambda: _FakeArqRedis()
-    return TestClient(app), db_session, fake_redis
+    app.dependency_overrides[get_arq_redis] = lambda: fake_arq
+    return TestClient(app), db_session, fake_redis, fake_arq
 
 
 def test_create_app_registers_expected_routes() -> None:
@@ -67,8 +72,24 @@ def test_create_app_registers_expected_routes() -> None:
     assert "/metrics" in paths
 
 
+def test_create_app_enables_cors_for_web_origin() -> None:
+    client, _, _, _ = _build_client()
+
+    response = client.options(
+        "/sessions",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert "POST" in response.headers["access-control-allow-methods"]
+
+
 def test_live_endpoint_returns_ok() -> None:
-    client, _, _ = _build_client()
+    client, _, _, _ = _build_client()
 
     response = client.get("/health/live")
 
@@ -77,7 +98,7 @@ def test_live_endpoint_returns_ok() -> None:
 
 
 def test_metrics_endpoint_exports_payload() -> None:
-    client, _, _ = _build_client()
+    client, _, _, _ = _build_client()
 
     response = client.get("/metrics")
 
@@ -86,7 +107,7 @@ def test_metrics_endpoint_exports_payload() -> None:
 
 
 def test_ready_endpoint_checks_database_redis_and_arq() -> None:
-    client, db_session, _ = _build_client()
+    client, db_session, _, _ = _build_client()
 
     response = client.get("/health/ready")
 
@@ -100,11 +121,11 @@ def test_ready_endpoint_checks_database_redis_and_arq() -> None:
 
 
 def test_create_session_endpoint_returns_session_payload() -> None:
-    client, _, _ = _build_client()
+    client, _, _, _ = _build_client()
 
     response = client.post(
         "/sessions",
-        json={"channel": "web", "external_user_id": "user-1"},
+        json={"channel": "web", "external_user_id": "user-1", "replace_existing": True},
     )
 
     assert response.status_code == 200
@@ -114,8 +135,17 @@ def test_create_session_endpoint_returns_session_payload() -> None:
     assert payload["status"] == "active"
 
 
+def test_create_session_endpoint_rejects_web_session_without_browser_identity() -> None:
+    client, _, _, _ = _build_client()
+
+    response = client.post("/sessions", json={"channel": "web"})
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "web_identity_required"
+
+
 def test_get_session_endpoint_returns_404_for_unknown_session() -> None:
-    client, db_session, _ = _build_client()
+    client, db_session, _, _ = _build_client()
     db_session.get.return_value = None
 
     response = client.get(f"/sessions/{uuid4()}")
@@ -125,7 +155,7 @@ def test_get_session_endpoint_returns_404_for_unknown_session() -> None:
 
 
 def test_create_query_endpoint_binds_session_message_and_query() -> None:
-    client, db_session, fake_redis = _build_client()
+    client, db_session, fake_redis, fake_arq = _build_client()
     session_id = uuid4()
     db_session.get.return_value = QASession(id=session_id, channel=SessionChannel.WEB, status=SessionStatus.ACTIVE)
 
@@ -140,10 +170,12 @@ def test_create_query_endpoint_binds_session_message_and_query() -> None:
     assert payload["query_id"] is not None
     assert payload["role"] == "user"
     assert fake_redis.last_publish[0].endswith(":events")
+    assert fake_arq.last_enqueue is not None
+    assert fake_arq.last_enqueue[0][0] == "process_query_job"
 
 
 def test_list_messages_endpoint_serializes_session_history() -> None:
-    client, db_session, _ = _build_client()
+    client, db_session, _, _ = _build_client()
     session_id = uuid4()
     db_session.get.return_value = QASession(id=session_id, channel=SessionChannel.WEB, status=SessionStatus.ACTIVE)
     db_session.execute.return_value.scalars.return_value.all.return_value = [

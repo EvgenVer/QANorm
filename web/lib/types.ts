@@ -52,9 +52,11 @@ export type Answer = {
 export type Evidence = {
   id: string;
   source_kind: "normative" | "trusted_web" | "open_web";
+  source_title: string | null;
   source_url: string | null;
   source_domain: string | null;
   document_id: string | null;
+  document_title: string | null;
   document_version_id: string | null;
   chunk_id: string | null;
   locator: string | null;
@@ -98,11 +100,4 @@ export type StreamEventEnvelope = {
   query_id: string;
   data: Record<string, unknown>;
   created_at: string;
-};
-
-export type ActivityEvent = {
-  id: string;
-  event: string;
-  created_at: string;
-  data: Record<string, unknown>;
 };

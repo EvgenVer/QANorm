@@ -93,6 +93,30 @@ def test_session_service_create_session_sets_expiration() -> None:
     session.flush.assert_called_once()
 
 
+def test_session_service_create_session_replaces_previous_web_session() -> None:
+    session = _mock_session()
+    repository = MagicMock()
+    repository.list_by_channel_identifiers.return_value = [QASession(channel=SessionChannel.WEB, status=SessionStatus.ACTIVE)]
+    repository.add.side_effect = lambda item: item
+    service = SessionService(session, qa_config=_qa_config(), repository=repository)
+
+    created = service.create_session(
+        channel=SessionChannel.WEB,
+        external_user_id="browser-1",
+        replace_existing=True,
+        now=datetime(2026, 3, 6, tzinfo=timezone.utc),
+    )
+
+    assert created.external_user_id == "browser-1"
+    repository.list_by_channel_identifiers.assert_called_once_with(
+        SessionChannel.WEB,
+        external_user_id="browser-1",
+        external_chat_id=None,
+    )
+    repository.delete.assert_called_once()
+    repository.add.assert_called_once()
+
+
 def test_session_service_resume_session_extends_existing_ttl() -> None:
     session = _mock_session()
     existing = QASession(channel=SessionChannel.WEB, status=SessionStatus.ACTIVE)

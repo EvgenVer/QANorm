@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from qanorm.api.dependencies import get_db_session
 from qanorm.api.errors import APIError
 from qanorm.api.schemas import CreateSessionRequest, MessageResponse, SessionResponse
+from qanorm.db.types import SessionChannel
 from qanorm.models import QAMessage, QASession
 from qanorm.services.qa.session_service import SessionService
 
@@ -25,10 +26,21 @@ def create_session(
 ) -> SessionResponse:
     """Create a new chat session."""
 
+    if payload.channel == SessionChannel.WEB and payload.external_user_id is None and payload.external_chat_id is None:
+        raise APIError(
+            status_code=422,
+            code="web_identity_required",
+            message="Creating a web session requires a browser-scoped external identifier.",
+        )
+
     qa_session = SessionService(db).create_session(
         channel=payload.channel,
         external_user_id=payload.external_user_id,
         external_chat_id=payload.external_chat_id,
+        # The web client always operates on a single active session. Creating a new
+        # one must replace the previous browser-scoped session instead of accumulating
+        # session history in the UI and database.
+        replace_existing=payload.replace_existing or payload.channel == SessionChannel.WEB,
     )
     return SessionResponse.model_validate(qa_session)
 

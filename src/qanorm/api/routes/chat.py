@@ -7,13 +7,14 @@ import json
 from datetime import datetime, timezone
 from uuid import UUID
 
+from arq import ArqRedis
 from fastapi import APIRouter, Depends, Request
 from redis import asyncio as redis_asyncio
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
-from qanorm.api.dependencies import get_db_session, get_redis_client
+from qanorm.api.dependencies import get_arq_redis, get_db_session, get_redis_client
 from qanorm.api.errors import APIError
 from qanorm.api.schemas import (
     AnswerCitationResponse,
@@ -42,6 +43,7 @@ async def create_query(
     payload: MessageRequest,
     db: Session = Depends(get_db_session),
     redis: redis_asyncio.Redis = Depends(get_redis_client),
+    arq_redis: ArqRedis = Depends(get_arq_redis),
 ) -> MessageResponse:
     """Persist a user message and create a linked query run."""
 
@@ -71,6 +73,7 @@ async def create_query(
         event="query_created",
         data={"session_id": str(session_id), "message_id": str(message.id)},
     )
+    await arq_redis.enqueue_job("process_query_job", {"query_id": str(query.id)}, _job_id=f"query:{query.id}")
     return MessageResponse(
         message_id=message.id,
         session_id=session_id,
@@ -205,12 +208,15 @@ def _serialize_answer(db: Session, query: QAQuery, answer: QAAnswer | None) -> A
 def _serialize_evidence(evidence: QAEvidence) -> EvidenceResponse:
     """Normalize one evidence row into the transport schema."""
 
+    source_title = evidence.locator if evidence.source_kind.value != "normative" else None
     return EvidenceResponse(
         id=evidence.id,
         source_kind=evidence.source_kind.value,
+        source_title=source_title,
         source_url=evidence.source_url,
         source_domain=evidence.source_domain,
         document_id=evidence.document_id,
+        document_title=evidence.document.title if evidence.document is not None else None,
         document_version_id=evidence.document_version_id,
         chunk_id=evidence.chunk_id,
         locator=evidence.locator,

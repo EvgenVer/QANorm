@@ -2,8 +2,8 @@ import type {
   Message,
   QueryCreated,
   QueryDetail,
-  Session,
   StreamEventEnvelope,
+  Session,
 } from "./types";
 
 export class APIClientError extends Error {
@@ -23,14 +23,14 @@ export class APIClient {
     this.baseUrl = baseUrl.replace(/\/$/, "");
   }
 
-  async listSessions(): Promise<Session[]> {
-    return this.request<Session[]>("/sessions");
-  }
-
-  async createSession(): Promise<Session> {
+  async createWebSession(externalUserId: string): Promise<Session> {
     return this.request<Session>("/sessions", {
       method: "POST",
-      body: JSON.stringify({ channel: "web" }),
+      body: JSON.stringify({
+        channel: "web",
+        external_user_id: externalUserId,
+        replace_existing: true,
+      }),
     });
   }
 
