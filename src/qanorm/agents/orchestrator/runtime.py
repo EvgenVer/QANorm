@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 from uuid import UUID, uuid4
+import re
 
 from redis import asyncio as redis_asyncio
 from sqlalchemy.orm import Session
@@ -23,6 +24,7 @@ from qanorm.workers.stage2 import publish_progress_event
 
 
 ProgressPublisher = Callable[[UUID, str, dict[str, Any] | None], Awaitable[None]]
+OpenWebFallbackScheduler = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None] | dict[str, Any] | None]
 ROUTE_SCOPE_MAP = {
     "normative": "normative",
     "freshness": "freshness",
@@ -33,6 +35,7 @@ QUERY_ROUTE_FLAGS = {
     "trusted_web": "used_trusted_web",
     "open_web": "used_open_web",
 }
+QUESTION_SPLIT_RE = re.compile(r"(?:,|;|\?| и | or )", re.IGNORECASE)
 
 
 @dataclass(slots=True, frozen=True)
@@ -195,6 +198,60 @@ class QueryOrchestrator:
         )
         return checks
 
+    async def schedule_open_web_fallback(
+        self,
+        *,
+        query_id: UUID,
+        state: QueryState,
+        scheduler: OpenWebFallbackScheduler | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Activate deferred open-web search only when normative/trusted evidence is insufficient."""
+
+        query = self._require_query(query_id)
+        decision = self._assess_open_web_fallback(state=state)
+        payload = {
+            "reason": decision["reason"],
+            "normative_count": decision["normative_count"],
+            "trusted_count": decision["trusted_count"],
+            "required_support": decision["required_support"],
+        }
+        if not decision["should_activate"]:
+            self._record_transition(query=query, event_type="open_web_fallback_skipped", payload=payload)
+            await self._publish(query.id, "open_web_fallback_skipped", payload)
+            return None
+
+        subtask = self._activate_or_create_open_web_subtask(query=query, state=state)
+        query.used_open_web = True
+        state.used_open_web = True
+        self.session.flush()
+
+        job_payload = {
+            "query_id": str(query.id),
+            "subtask_id": str(subtask.id),
+            "query_text": state.query_text,
+            "limit": int(limit or self.runtime_config.qa.search.open_web_max_results),
+            "allowed_domains": [],
+        }
+        scheduler_result: dict[str, Any] | None = None
+        if scheduler is not None:
+            scheduled = scheduler(job_payload)
+            scheduler_result = await scheduled if hasattr(scheduled, "__await__") else scheduled
+            if isinstance(scheduler_result, dict):
+                subtask.status = SubtaskStatus.COMPLETED
+                subtask.result_summary = f"open_web_results={int(scheduler_result.get('result_count', 0))}"
+                self.subtask_repository.save(subtask)
+                for item in state.subtasks:
+                    if item.subtask_id == subtask.id:
+                        item.status = SubtaskStatus.COMPLETED
+                        item.result_summary = subtask.result_summary
+                        break
+
+        event_payload = payload | {"subtask_id": str(subtask.id), "scheduled": scheduler is not None}
+        self._record_transition(query=query, event_type="open_web_fallback_scheduled", payload=event_payload)
+        await self._publish(query.id, "open_web_fallback_scheduled", event_payload)
+        return scheduler_result or job_payload
+
     def _require_query(self, query_id: UUID) -> QAQuery:
         """Load one stored query or fail fast."""
 
@@ -230,12 +287,13 @@ class QueryOrchestrator:
         state.query_type = analysis.query_type
         state.requires_freshness_check = analysis.requires_freshness_check
         state.used_trusted_web = analysis.requires_trusted_web
-        state.used_open_web = analysis.requires_open_web
+        state.open_web_fallback_allowed = analysis.requires_open_web
+        state.used_open_web = False
 
         query.query_type = analysis.query_type
         query.requires_freshness_check = analysis.requires_freshness_check
         query.used_trusted_web = analysis.requires_trusted_web
-        query.used_open_web = analysis.requires_open_web
+        query.used_open_web = False
         self.session.flush()
 
     def _persist_subtasks(
@@ -248,7 +306,13 @@ class QueryOrchestrator:
         """Persist the planned tasks into qa_subtasks and mirror them into QueryState."""
 
         created_rows: list[QASubtask] = []
+        has_prior_coverage_routes = any(task.route in {"normative", "trusted_web"} for task in planned_subtasks)
         for task in planned_subtasks:
+            initial_status = (
+                SubtaskStatus.SKIPPED
+                if task.route == "open_web" and has_prior_coverage_routes
+                else SubtaskStatus.PENDING
+            )
             row = self.subtask_repository.add(
                 QASubtask(
                     id=uuid4(),
@@ -256,7 +320,7 @@ class QueryOrchestrator:
                     parent_subtask_id=None if task.parent_index is None else created_rows[task.parent_index].id,
                     subtask_type=task.subtask_type,
                     description=task.description,
-                    status=SubtaskStatus.PENDING,
+                    status=initial_status,
                     priority=task.priority,
                 )
             )
@@ -269,6 +333,11 @@ class QueryOrchestrator:
                     description=row.description,
                     status=row.status,
                     priority=row.priority,
+                    result_summary=(
+                        "deferred_until_normative_and_trusted_coverage_is_insufficient"
+                        if initial_status is SubtaskStatus.SKIPPED and task.route == "open_web"
+                        else None
+                    ),
                 )
             )
         return state
@@ -315,3 +384,94 @@ class QueryOrchestrator:
         if prompt_registry is None or not hasattr(prompt_registry, "resolve_version"):
             return "unknown"
         return str(prompt_registry.resolve_version(prompt_name))
+
+    def _assess_open_web_fallback(self, *, state: QueryState) -> dict[str, Any]:
+        """Decide whether deferred open-web search should be activated for the current query state."""
+
+        open_web_planned = state.open_web_fallback_allowed or any(
+            item.subtask_type == "open_web_search" for item in state.subtasks
+        )
+        normative_count = len(state.evidence_bundle.normative)
+        trusted_count = len(state.evidence_bundle.trusted_web)
+        required_support = self._required_support_count(state.query_text)
+        combined_support = normative_count + trusted_count
+
+        if not open_web_planned:
+            return {
+                "should_activate": False,
+                "reason": "open_web_not_planned",
+                "normative_count": normative_count,
+                "trusted_count": trusted_count,
+                "required_support": required_support,
+            }
+        if state.evidence_bundle.open_web:
+            return {
+                "should_activate": False,
+                "reason": "open_web_already_collected",
+                "normative_count": normative_count,
+                "trusted_count": trusted_count,
+                "required_support": required_support,
+            }
+        if combined_support >= required_support:
+            return {
+                "should_activate": False,
+                "reason": "coverage_sufficient_without_open_web",
+                "normative_count": normative_count,
+                "trusted_count": trusted_count,
+                "required_support": required_support,
+            }
+        return {
+            "should_activate": True,
+            "reason": "normative_and_trusted_coverage_insufficient",
+            "normative_count": normative_count,
+            "trusted_count": trusted_count,
+            "required_support": required_support,
+        }
+
+    def _activate_or_create_open_web_subtask(self, *, query: QAQuery, state: QueryState) -> QASubtask:
+        """Turn a deferred open-web subtask into a runnable one, or create it on demand."""
+
+        existing_rows = self.subtask_repository.list_for_query(query.id)
+        deferred_row = next(
+            (item for item in existing_rows if item.subtask_type == "open_web_search" and item.status == SubtaskStatus.SKIPPED),
+            None,
+        )
+        if deferred_row is None:
+            deferred_row = self.subtask_repository.add(
+                QASubtask(
+                    id=uuid4(),
+                    query_id=query.id,
+                    parent_subtask_id=None,
+                    subtask_type="open_web_search",
+                    description=f"Search open web for unresolved aspects of: {state.query_text[:120]}",
+                    status=SubtaskStatus.PENDING,
+                    priority=40,
+                )
+            )
+            state.subtasks.append(
+                SubtaskState(
+                    subtask_id=deferred_row.id,
+                    parent_subtask_id=None,
+                    subtask_type=deferred_row.subtask_type,
+                    description=deferred_row.description,
+                    status=deferred_row.status,
+                    priority=deferred_row.priority,
+                )
+            )
+            return deferred_row
+
+        deferred_row.status = SubtaskStatus.PENDING
+        deferred_row.result_summary = None
+        self.subtask_repository.save(deferred_row)
+        for item in state.subtasks:
+            if item.subtask_id == deferred_row.id:
+                item.status = SubtaskStatus.PENDING
+                item.result_summary = None
+                break
+        return deferred_row
+
+    def _required_support_count(self, query_text: str) -> int:
+        """Estimate the minimum amount of non-open-web evidence needed before falling back."""
+
+        aspects = [item.strip() for item in QUESTION_SPLIT_RE.split(query_text) if item.strip()]
+        return max(1, min(2, len(aspects) or 1))

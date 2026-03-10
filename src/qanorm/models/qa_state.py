@@ -104,6 +104,7 @@ class QueryState:
     verification_fingerprint: str | None = None
     used_open_web: bool = False
     used_trusted_web: bool = False
+    open_web_fallback_allowed: bool = False
     requires_freshness_check: bool = False
 
     def build_prompt_context(self) -> PromptRenderContext:

@@ -8,9 +8,9 @@ from uuid import uuid4
 
 from qanorm.agents.orchestrator import QueryOrchestrator
 from qanorm.agents.planner import PlannedSubtask, QueryAnalysis, QueryAnalyzer, QueryComplexity, QueryTaskDecomposer
-from qanorm.db.types import MessageRole, QueryStatus, SessionChannel, SessionStatus
-from qanorm.models import QAMessage, QAQuery, QASession
-from qanorm.models.qa_state import PromptRenderContext
+from qanorm.db.types import EvidenceSourceKind, MessageRole, QueryStatus, SessionChannel, SessionStatus, SubtaskStatus
+from qanorm.models import QAEvidence, QAMessage, QAQuery, QASession
+from qanorm.models.qa_state import EvidenceBundle, PromptRenderContext
 from qanorm.prompts.registry import create_prompt_registry
 from qanorm.providers.base import ChatModelProvider, ChatRequest, ChatResponse, ProviderCapabilities, ProviderName
 from qanorm.tools.base import Tool, ToolDefinition, ToolRegistry
@@ -65,6 +65,12 @@ class _InMemorySubtaskRepository:
     def add(self, subtask):
         self.rows.append(subtask)
         return subtask
+
+    def save(self, subtask):
+        return subtask
+
+    def list_for_query(self, query_id):
+        return [row for row in self.rows if row.query_id == query_id]
 
 
 @dataclass
@@ -222,11 +228,16 @@ def test_query_orchestrator_persists_subtasks_records_audit_and_publishes_progre
     assert query.status == QueryStatus.RETRIEVING
     assert query.query_type == "mixed"
     assert query.requires_freshness_check is True
-    assert query.used_open_web is True
+    assert query.used_open_web is False
     assert [row.subtask_type for row in subtask_repository.rows] == [
         "normative_retrieval",
         "freshness_check",
         "open_web_search",
+    ]
+    assert [row.status for row in subtask_repository.rows] == [
+        SubtaskStatus.PENDING,
+        SubtaskStatus.PENDING,
+        SubtaskStatus.SKIPPED,
     ]
     assert [subtask.subtask_type for subtask in result.state.subtasks] == [
         "normative_retrieval",
@@ -245,6 +256,176 @@ def test_query_orchestrator_persists_subtasks_records_audit_and_publishes_progre
     ]
 
 
+def test_query_orchestrator_schedules_open_web_fallback_only_after_insufficient_coverage() -> None:
+    query = QAQuery(
+        id=uuid4(),
+        session_id=uuid4(),
+        message_id=uuid4(),
+        query_text="Need external guidance for a niche facade topic, installation tolerances after checking norms.",
+        status=QueryStatus.RETRIEVING,
+        query_type="mixed",
+        used_open_web=False,
+    )
+    subtask_repository = _InMemorySubtaskRepository()
+    open_web_row = subtask_repository.add(
+        type(
+            "_Subtask",
+            (),
+            {
+                "id": uuid4(),
+                "query_id": query.id,
+                "parent_subtask_id": None,
+                "subtask_type": "open_web_search",
+                "description": "Deferred open web search",
+                "status": SubtaskStatus.SKIPPED,
+                "priority": 40,
+                "result_summary": "deferred_until_normative_and_trusted_coverage_is_insufficient",
+            },
+        )()
+    )
+    published_events: list[tuple[str, dict]] = []
+
+    async def _publisher(query_id, event, data=None):
+        published_events.append((event, data or {}))
+
+    orchestrator = QueryOrchestrator(
+        MagicMock(),
+        tool_registry=_build_tool_registry(),
+        runtime_config=_runtime_config(),
+        progress_publisher=_publisher,
+        context_service=_ContextServiceStub(query.session_id, query.id, query.query_text),
+        query_repository=_InMemoryQueryRepository(query),
+        subtask_repository=subtask_repository,
+        audit_repository=_InMemoryAuditRepository(),
+    )
+    state = _build_runtime_state(query)
+    state.subtasks.append(
+        type(
+            "_StateSubtask",
+            (),
+            {
+                "subtask_id": open_web_row.id,
+                "parent_subtask_id": None,
+                "subtask_type": "open_web_search",
+                "description": open_web_row.description,
+                "status": SubtaskStatus.SKIPPED,
+                "priority": 40,
+                "result_summary": open_web_row.result_summary,
+            },
+        )()
+    )
+    state.evidence_bundle = EvidenceBundle(
+        normative=[
+            QAEvidence(
+                query_id=query.id,
+                source_kind=EvidenceSourceKind.NORMATIVE,
+                quote="One narrow requirement",
+                chunk_text="One narrow requirement",
+            )
+        ],
+        trusted_web=[],
+        open_web=[],
+    )
+    state.open_web_fallback_allowed = True
+
+    async def _scheduler(payload):
+        return {"result_count": 2, "payload": payload}
+
+    result = asyncio.run(orchestrator.schedule_open_web_fallback(query_id=query.id, state=state, scheduler=_scheduler))
+
+    assert result is not None
+    assert query.used_open_web is True
+    assert open_web_row.status == SubtaskStatus.COMPLETED
+    assert any(event == "open_web_fallback_scheduled" for event, _ in published_events)
+
+
+def test_query_orchestrator_skips_open_web_fallback_when_normative_and_trusted_are_sufficient() -> None:
+    query = QAQuery(
+        id=uuid4(),
+        session_id=uuid4(),
+        message_id=uuid4(),
+        query_text="Compare two design options and use only verified sources.",
+        status=QueryStatus.RETRIEVING,
+        query_type="mixed",
+        used_open_web=False,
+    )
+    subtask_repository = _InMemorySubtaskRepository()
+    open_web_row = subtask_repository.add(
+        type(
+            "_Subtask",
+            (),
+            {
+                "id": uuid4(),
+                "query_id": query.id,
+                "parent_subtask_id": None,
+                "subtask_type": "open_web_search",
+                "description": "Deferred open web search",
+                "status": SubtaskStatus.SKIPPED,
+                "priority": 40,
+                "result_summary": "deferred",
+            },
+        )()
+    )
+
+    orchestrator = QueryOrchestrator(
+        MagicMock(),
+        tool_registry=_build_tool_registry(),
+        runtime_config=_runtime_config(),
+        context_service=_ContextServiceStub(query.session_id, query.id, query.query_text),
+        query_repository=_InMemoryQueryRepository(query),
+        subtask_repository=subtask_repository,
+        audit_repository=_InMemoryAuditRepository(),
+    )
+    state = _build_runtime_state(query)
+    state.subtasks.append(
+        type(
+            "_StateSubtask",
+            (),
+            {
+                "subtask_id": open_web_row.id,
+                "parent_subtask_id": None,
+                "subtask_type": "open_web_search",
+                "description": open_web_row.description,
+                "status": SubtaskStatus.SKIPPED,
+                "priority": 40,
+                "result_summary": open_web_row.result_summary,
+            },
+        )()
+    )
+    state.evidence_bundle = EvidenceBundle(
+        normative=[
+            QAEvidence(
+                query_id=query.id,
+                source_kind=EvidenceSourceKind.NORMATIVE,
+                quote="Requirement one",
+                chunk_text="Requirement one",
+            ),
+            QAEvidence(
+                query_id=query.id,
+                source_kind=EvidenceSourceKind.NORMATIVE,
+                quote="Requirement two",
+                chunk_text="Requirement two",
+            ),
+        ],
+        trusted_web=[
+            QAEvidence(
+                query_id=query.id,
+                source_kind=EvidenceSourceKind.TRUSTED_WEB,
+                quote="Trusted clarification",
+                chunk_text="Trusted clarification",
+            )
+        ],
+        open_web=[],
+    )
+    state.open_web_fallback_allowed = True
+
+    result = asyncio.run(orchestrator.schedule_open_web_fallback(query_id=query.id, state=state, scheduler=None))
+
+    assert result is None
+    assert query.used_open_web is False
+    assert open_web_row.status == SubtaskStatus.SKIPPED
+
+
 def _build_query_state(query_text: str):
     session_id = uuid4()
     return SimpleNamespace(
@@ -259,6 +440,35 @@ def _build_query_state(query_text: str):
             recent_messages=[QAMessage(session_id=session_id, role=MessageRole.USER, content=query_text)],
         ),
     )
+
+
+def _build_runtime_state(query: QAQuery):
+    return type(
+        "_State",
+        (),
+        {
+            "session_id": query.session_id,
+            "query_id": query.id,
+            "message_id": query.message_id,
+            "query_text": query.query_text,
+            "status": query.status,
+            "query_type": query.query_type,
+            "session_summary": None,
+            "recent_messages": [],
+            "subtasks": [],
+            "evidence_bundle": EvidenceBundle(),
+            "verification_attempt_count": 0,
+            "repair_attempt_count": 0,
+            "tool_call_count": 0,
+            "attempt_deadline": None,
+            "evidence_fingerprint": None,
+            "verification_fingerprint": None,
+            "used_open_web": False,
+            "used_trusted_web": False,
+            "open_web_fallback_allowed": False,
+            "requires_freshness_check": False,
+        },
+    )()
 
 
 def _build_tool_registry() -> ToolRegistry:

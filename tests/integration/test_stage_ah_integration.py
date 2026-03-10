@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from qanorm.agents.orchestrator import QueryOrchestrator
 from qanorm.agents.planner import QueryAnalyzer, QueryTaskDecomposer
-from qanorm.db.types import MessageRole, QueryStatus, SessionChannel, SessionStatus
+from qanorm.db.types import MessageRole, QueryStatus, SessionChannel, SessionStatus, SubtaskStatus
 from qanorm.models import AuditEvent, QAMessage, QAQuery, QASession
 from qanorm.models.qa_state import PromptRenderContext
 from qanorm.prompts.registry import create_prompt_registry
@@ -73,6 +73,12 @@ class _InMemorySubtaskRepository:
     def add(self, subtask):
         self.rows.append(subtask)
         return subtask
+
+    def save(self, subtask):
+        return subtask
+
+    def list_for_query(self, query_id):
+        return [row for row in self.rows if row.query_id == query_id]
 
 
 @dataclass
@@ -277,7 +283,7 @@ def test_403_integration_orchestrator_handles_multi_aspect_query() -> None:
     assert query.query_type == "mixed"
     assert query.requires_freshness_check is True
     assert query.used_trusted_web is True
-    assert query.used_open_web is True
+    assert query.used_open_web is False
     assert [row.subtask_type for row in subtask_repository.rows] == [
         "normative_retrieval",
         "freshness_check",
@@ -291,6 +297,12 @@ def test_403_integration_orchestrator_handles_multi_aspect_query() -> None:
         "open_web_search",
     ]
     assert [subtask.priority for subtask in result.state.subtasks] == [10, 20, 30, 40]
+    assert [subtask.status for subtask in result.state.subtasks] == [
+        SubtaskStatus.PENDING,
+        SubtaskStatus.PENDING,
+        SubtaskStatus.PENDING,
+        SubtaskStatus.SKIPPED,
+    ]
     assert session.flush_count > 0
 
 

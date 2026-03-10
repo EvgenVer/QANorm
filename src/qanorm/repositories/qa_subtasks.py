@@ -23,6 +23,13 @@ class QASubtaskRepository:
         self.session.flush()
         return subtask
 
+    def save(self, subtask: QASubtask) -> QASubtask:
+        """Flush updates for one existing subtask row."""
+
+        self.session.add(subtask)
+        self.session.flush()
+        return subtask
+
     def list_for_query(self, query_id: UUID) -> list[QASubtask]:
         """Return subtasks ordered for deterministic tree reconstruction."""
 
