@@ -2,52 +2,107 @@
 
 ## Текущее состояние
 
-Репозиторий приведен к Stage 1-only состоянию. В backlog оставлены только задачи локальной нормативной базы.
+Репозиторий находится в состоянии:
+
+- `Stage 1` реализован и используется как базовый слой данных;
+- старый Stage 2 удален;
+- следующий шаг проекта: собрать быстрый `Stage 2A MVP` на `Custom-core`.
 
 ## Stage 1
 
-### Блок A. Каркас и конфигурация
+### Блок S1. База и ingestion
 
-- [x] Подготовить структуру репозитория Stage 1.
-- [x] Настроить `pyproject.toml`, CLI entrypoint и dev-зависимости.
-- [x] Добавить `.env.example` и базовые YAML-конфиги.
-- [x] Реализовать загрузку и валидацию Stage 1 конфигурации.
-- [x] Настроить logging.
+- [x] Сохранить локальную нормативную базу как основной слой данных.
+- [x] Сохранить ingestion pipeline, worker и raw storage.
+- [x] Сохранить `document_nodes` как канонический structural layer.
+- [x] Сохранить Stage 1 CLI, тесты и readiness-артефакты.
 
-### Блок B. База данных и модели
+## Stage 2A MVP
 
-- [x] Реализовать схему Alembic для Stage 1.
-- [x] Описать ORM-модели документов, версий, источников, raw-артефактов, узлов, ссылок, задач и событий обновления.
-- [x] Реализовать репозитории доступа к данным.
+### Блок A. Подготовка Stage 1 под retrieval
 
-### Блок C. Ingestion pipeline
+- [ ] Добавить миграцию для таблицы `document_aliases`.
+- [ ] Добавить миграцию для полей `document_nodes.locator_raw`, `document_nodes.locator_normalized`, `document_nodes.heading_path`.
+- [ ] Добавить индекс по `document_nodes.locator_normalized`.
+- [ ] Добавить миграцию для таблицы `retrieval_units`.
+- [ ] Добавить ORM-модели и репозитории для `document_aliases` и `retrieval_units`.
+- [ ] Добавить тесты на миграции и базовые CRUD-операции новых сущностей.
 
-- [x] Реализовать crawl seed-страниц.
-- [x] Реализовать parsing list pages и document cards.
-- [x] Реализовать загрузку raw-артефактов.
-- [x] Реализовать извлечение текста из HTML/PDF.
-- [x] Реализовать OCR fallback.
-- [x] Реализовать нормализацию структуры документа.
-- [x] Реализовать refresh устаревших документов.
+### Блок B. Derived retrieval data
 
-### Блок D. Индексация
+- [ ] Реализовать builder алиасов документов из кодов, названий и ссылок.
+- [ ] Реализовать backfill `document_aliases`.
+- [ ] Реализовать builder `document_card` units.
+- [ ] Реализовать builder `semantic_block` units поверх диапазонов `document_nodes`.
+- [ ] Реализовать backfill `retrieval_units`.
+- [ ] Реализовать индексацию `text_tsv` и `embedding` для `retrieval_units`.
+- [ ] Добавить CLI-команды подготовки и пересборки derived retrieval data.
+- [ ] Добавить unit/integration tests на сборку `retrieval_units`.
 
-- [x] Реализовать node-level FTS индексацию.
-- [x] Реализовать node-level vector field и переиндексацию.
-- [x] Реализовать CLI-команду `reindex`.
+### Блок C. Retrieval engine
 
-### Блок E. Worker и сервисные команды
+- [ ] Реализовать детерминированный parser вопроса.
+- [ ] Реализовать `resolve_document` по коду, алиасу и сокращению.
+- [ ] Реализовать `discover_documents` для вопросов без явной нормы.
+- [ ] Реализовать `lookup_locator`.
+- [ ] Реализовать lexical retrieval по `document_nodes` и `retrieval_units`.
+- [ ] Реализовать dense retrieval по `retrieval_units`.
+- [ ] Реализовать merge и rerank shortlist.
+- [ ] Реализовать `read_node` и `expand_neighbors`.
+- [ ] Реализовать context builder и compact evidence pack.
+- [ ] Добавить unit/integration tests на retrieval engine.
 
-- [x] Реализовать очередь ingestion-задач в PostgreSQL.
-- [x] Реализовать worker loop с retry и failure handling.
-- [x] Реализовать CLI-команды `crawl-seeds`, `run-worker`, `refresh-document`, `update-document`.
+### Блок D. Provider layer и contracts
 
-### Блок F. Качество и тесты
+- [ ] Добавить Pydantic-схемы запросов, observations, evidence и answer DTO.
+- [ ] Добавить capability-based provider interfaces.
+- [ ] Реализовать Gemini REST adapter через `httpx`.
+- [ ] Добавить retries, timeouts и обработку ошибок провайдера.
+- [ ] Добавить `respx`-тесты на provider adapter.
 
-- [x] Реализовать ingestion metrics и readiness checklist.
-- [x] Оставить только unit/integration tests Stage 1.
-- [x] Удалить консультативный runtime, внешние каналы и связанные с ними тесты, конфиги, миграции и документацию.
+### Блок E. Agent runtime
 
-## Следующий этап
+- [ ] Реализовать `ControllerAgent`.
+- [ ] Реализовать `ReAct-lite` loop с ограничением по шагам.
+- [ ] Реализовать policy выбора retrieval tools.
+- [ ] Реализовать stop conditions и corrective iteration policy.
+- [ ] Реализовать переход в partial mode при слабом evidence.
+- [ ] Добавить unit/integration tests на runtime.
 
-Новый retrieval/assistant слой должен проектироваться заново отдельным этапом поверх текущей базы Stage 1.
+### Блок F. Answer layer
+
+- [ ] Реализовать `Composer`.
+- [ ] Реализовать `GroundingVerifier`.
+- [ ] Реализовать claim-to-evidence mapping.
+- [ ] Реализовать фильтрацию unsupported statements.
+- [ ] Реализовать финальный answer model с citations и ограничениями ответа.
+- [ ] Добавить unit/integration tests на answer layer.
+
+### Блок G. Streamlit MVP
+
+- [ ] Реализовать chat-first интерфейс на `Streamlit`.
+- [ ] Реализовать потоковый вывод ответа.
+- [ ] Реализовать панель evidence.
+- [ ] Реализовать отображение документа, локатора и цитаты.
+- [ ] Реализовать debug view шагов `ReAct-lite`.
+- [ ] Добавить локальный smoke checklist для ручной приемки UI.
+
+### Блок H. Eval и приемка MVP
+
+- [ ] Собрать локальный eval-набор из `50-100` реальных вопросов.
+- [ ] Разбить eval-набор на explicit document, explicit locator, no explicit norm и ambiguous scenarios.
+- [ ] Реализовать прогон eval-набора и сбор метрик качества.
+- [ ] Зафиксировать `document hit@3`, `locator hit@5`, `grounded answer rate`, `unsupported claim rate`, `partial answer rate`.
+- [ ] Исправить критические провалы по результатам eval.
+- [ ] Подготовить краткий MVP readiness report.
+
+## Покрытие плана
+
+- Блок `A` покрывает подготовку Stage 1 под Stage 2A.
+- Блок `B` покрывает построение derived retrieval data.
+- Блок `C` покрывает retrieval engine.
+- Блок `D` покрывает provider abstraction и contracts.
+- Блок `E` покрывает `ReAct-lite` runtime.
+- Блок `F` покрывает answer layer.
+- Блок `G` покрывает `Streamlit` MVP.
+- Блок `H` покрывает приемку и оценку качества.
