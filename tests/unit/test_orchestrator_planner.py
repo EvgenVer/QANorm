@@ -188,6 +188,42 @@ def test_query_analyzer_routes_underspecified_document_reference_to_clarify() ->
     assert analysis.document_hints == ["СП 63"]
 
 
+def test_query_analyzer_overrides_model_no_retrieval_for_explicit_normative_locator() -> None:
+    analyzer = QueryAnalyzer(
+        runtime_config=_runtime_config(),
+        prompt_registry=create_prompt_registry(_runtime_config()),
+        provider=_FakeChatProvider(
+            """
+            {
+              "query_type": "normative",
+              "complexity": "simple",
+              "intent": "no_retrieval",
+              "retrieval_mode": "none",
+              "clarification_required": false,
+              "clarification_question": null,
+              "requires_freshness_check": false,
+              "requires_trusted_web": false,
+              "requires_open_web": false,
+              "document_hints": ["РЎРџ 35.13330.2011"],
+              "locator_hints": ["Р°Р·РґРµР» 5.1"],
+              "subject": "С‚СЂРµР±РѕРІР°РЅРёСЏ Рє РјРѕСЃС‚Р°Рј",
+              "engineering_aspects": ["РјРѕСЃС‚С‹"],
+              "constraints": [],
+              "assumptions": []
+            }
+            """
+        ),
+    )
+
+    analysis = asyncio.run(analyzer.analyze(_build_query_state("Что требует СП 35.13330.2011 по разделу 5.1?")))
+
+    assert analysis.intent == QueryIntent.NORMATIVE_RETRIEVAL
+    assert analysis.retrieval_mode == RetrievalMode.NORMATIVE
+    assert analysis.clarification_required is False
+    assert analysis.document_hints
+    assert analysis.locator_hints
+
+
 def test_task_decomposer_routes_all_required_sources() -> None:
     decomposer = QueryTaskDecomposer(
         runtime_config=_runtime_config(),

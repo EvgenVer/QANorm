@@ -283,7 +283,12 @@ def extract_subject(
     """Strip obvious document references and keep the remaining subject text."""
 
     stripped = _strip_known_hints(query_text, document_hints or [], locator_hints or [])
-    stripped = re.sub(r"\b(?:по|согласно|в|на|для|как|какие|какой|нужно|требуется)\b", " ", stripped, flags=re.IGNORECASE)
+    stripped = re.sub(
+        r"\b(?:по|согласно|в|на|для|как|какие|какой|нужно|требуется|что)\b",
+        " ",
+        stripped,
+        flags=re.IGNORECASE,
+    )
     subject = normalize_whitespace(stripped.strip(" .,:;"))
     return subject[:180] or None
 
@@ -318,7 +323,10 @@ def build_clarification_question(
 def _normalize_hint(value: str) -> str:
     """Normalize spacing inside extracted hints without changing semantics."""
 
-    return normalize_whitespace(value).replace("СП63", "СП 63").replace("ГОСТ21", "ГОСТ 21")
+    normalized = normalize_whitespace(value)
+    normalized = normalized.replace("СП63", "СП 63")
+    normalized = normalized.replace("ГОСТ21", "ГОСТ 21")
+    return normalized
 
 
 def _strip_known_hints(query_text: str, document_hints: list[str], locator_hints: list[str]) -> str:

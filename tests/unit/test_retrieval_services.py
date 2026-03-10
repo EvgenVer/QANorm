@@ -19,6 +19,8 @@ from qanorm.services.qa.retrieval_estimate_service import estimate_retrieval_rol
 from qanorm.services.qa.retrieval_service import (
     RetrievalHit,
     RetrievalRequest,
+    _expand_locator_variants,
+    _is_scoped_result_sufficient,
     normalize_hits_to_evidence,
     retrieve_normative_evidence,
     retrieve_normative_evidence_with_resolution,
@@ -219,6 +221,21 @@ def test_retrieve_normative_evidence_with_resolution_falls_back_to_global_when_s
     assert result.primary_hits == [global_hit]
     assert metadata["fallback_used"] is True
     assert calls == [([resolution.primary_candidate.document_id], "document_scoped"), ([], "global")]
+
+
+def test_expand_locator_variants_maps_human_section_hint_to_chunk_locator_tokens() -> None:
+    variants = _expand_locator_variants("раздел 5.1")
+
+    assert "раздел 5.1" in variants
+    assert "5.1" in variants
+    assert "subsection:5.1" in variants
+
+
+def test_scoped_result_sufficiency_accepts_subsection_locator_variant() -> None:
+    hit = _build_hit(locator="title:1/subsection:5.1/paragraph:473", locator_end="title:1/subsection:5.1/paragraph:500")
+    result = type("Result", (), {"primary_hits": [hit], "secondary_hits": [], "all_hits": [hit]})()
+
+    assert _is_scoped_result_sufficient(result, locator_hint="раздел 5.1") is True
 
 
 def _build_hit(

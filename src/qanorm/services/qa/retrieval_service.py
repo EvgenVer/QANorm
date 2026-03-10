@@ -37,6 +37,10 @@ from qanorm.utils.text import normalize_whitespace
 
 LOCATOR_QUERY_RE = re.compile(r"(?P<code>.+?)\s+(?P<locator>\d+(?:[./]\d+)*[a-zа-я]?)$", re.IGNORECASE)
 RRF_K = 60
+LOCATOR_VALUE_RE = re.compile(
+    r"(?:(?P<label>п\.|пункт|табл\.|таблица|раздел|глава|прил\.|приложение)\s*)?(?P<value>\d+(?:[./]\d+)*[a-zа-я]?)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -373,6 +377,7 @@ def _run_exact_match_lookup(session: Session, *, request: RetrievalRequest, quer
 
     normalized_code, inferred_locator_hint = _split_query_for_locator(query_rewrite.exact_query)
     effective_locator_hint = request.locator_hint or query_rewrite.locator_hint or inferred_locator_hint
+    locator_variants = _expand_locator_variants(effective_locator_hint)
     exact_query = query_rewrite.exact_query or request.query_text
     predicates = [
         Document.normalized_code == normalized_code,
@@ -381,14 +386,14 @@ def _run_exact_match_lookup(session: Session, *, request: RetrievalRequest, quer
     if request.document_ids:
         predicates.extend(
             [
-                RetrievalChunk.locator.ilike(f"%{effective_locator_hint}%") if effective_locator_hint else literal(False),
-                RetrievalChunk.locator_end.ilike(f"%{effective_locator_hint}%") if effective_locator_hint else literal(False),
+                _build_locator_predicate(locator_variants),
+                _build_locator_end_predicate(locator_variants),
                 RetrievalChunk.chunk_text.ilike(f"%{clean_document_code(exact_query)}%"),
             ]
         )
-    elif effective_locator_hint:
-        predicates.append(RetrievalChunk.locator.ilike(f"%{effective_locator_hint}%"))
-        predicates.append(RetrievalChunk.locator_end.ilike(f"%{effective_locator_hint}%"))
+    elif locator_variants:
+        predicates.append(_build_locator_predicate(locator_variants))
+        predicates.append(_build_locator_end_predicate(locator_variants))
     stmt = (
         _build_chunk_query(session, request=request)
         .where(or_(*predicates))
@@ -539,7 +544,12 @@ def _is_scoped_result_sufficient(result: RetrievalResult, *, locator_hint: str |
     if not result.primary_hits:
         return False
     if locator_hint:
-        return any(locator_hint.lower() in (hit.locator or "").lower() or locator_hint.lower() in (hit.locator_end or "").lower() for hit in result.primary_hits)
+        locator_variants = _expand_locator_variants(locator_hint)
+        return any(
+            variant.lower() in (hit.locator or "").lower() or variant.lower() in (hit.locator_end or "").lower()
+            for hit in result.primary_hits
+            for variant in locator_variants
+        )
     return len(result.primary_hits) >= 1
 
 
@@ -718,3 +728,50 @@ def _split_query_for_locator(query_text: str) -> tuple[str, str | None]:
     if not match:
         return normalize_document_code(cleaned), None
     return normalize_document_code(match.group("code")), match.group("locator")
+
+
+def _expand_locator_variants(locator_hint: str | None) -> list[str]:
+    """Translate user-facing locator text into stored chunk locator fragments."""
+
+    if not locator_hint:
+        return []
+    normalized = normalize_whitespace(locator_hint)
+    variants: list[str] = [normalized]
+    match = LOCATOR_VALUE_RE.search(normalized)
+    if match is None:
+        return variants
+
+    value = match.group("value")
+    label = (match.group("label") or "").lower()
+    candidates = [value]
+    if label.startswith(("п.", "пункт")):
+        candidates.extend([f"point:{value}", f"subpoint:{value}"])
+    elif label.startswith(("табл", "таблица")):
+        candidates.append(f"table:{value}")
+    elif label.startswith(("раздел", "глава")):
+        candidates.extend([f"subsection:{value}", f"point:{value}"])
+    elif label.startswith(("прил", "приложение")):
+        candidates.append(f"appendix:{value}")
+    else:
+        candidates.extend([f"subsection:{value}", f"point:{value}"])
+
+    for candidate in candidates:
+        if candidate not in variants:
+            variants.append(candidate)
+    return variants
+
+
+def _build_locator_predicate(locator_variants: list[str]):
+    """Build a locator OR-clause without repeating variant expansion logic."""
+
+    if not locator_variants:
+        return literal(False)
+    return or_(*[RetrievalChunk.locator.ilike(f"%{variant}%") for variant in locator_variants])
+
+
+def _build_locator_end_predicate(locator_variants: list[str]):
+    """Mirror locator matching for the end locator column."""
+
+    if not locator_variants:
+        return literal(False)
+    return or_(*[RetrievalChunk.locator_end.ilike(f"%{variant}%") for variant in locator_variants])

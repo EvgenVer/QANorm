@@ -232,6 +232,19 @@ class QueryAnalyzer:
             retrieval_mode = heuristic.retrieval_mode
             clarification_required = heuristic.clarification_required
             clarification_question = heuristic.clarification_question
+        elif self._should_force_normative_override(
+            heuristic=heuristic,
+            intent=intent,
+            document_hints=document_hints,
+            locator_hints=locator_hints,
+        ):
+            # Explicit document+locator questions are too expensive to misroute into
+            # `no_retrieval` or an unnecessary clarify round because of one bad model
+            # judgment. In that case deterministic query understanding wins.
+            intent = heuristic.intent
+            retrieval_mode = heuristic.retrieval_mode
+            clarification_required = heuristic.clarification_required
+            clarification_question = heuristic.clarification_question
 
         extracted_documents = extract_document_hints(query_text)
         extracted_locators = extract_locator_hints(query_text)
@@ -315,6 +328,26 @@ class QueryAnalyzer:
             QueryIntent.MIXED_RETRIEVAL: RetrievalMode.MIXED,
         }
         return mapping[intent]
+
+    def _should_force_normative_override(
+        self,
+        *,
+        heuristic: QueryIntentResult,
+        intent: QueryIntent,
+        document_hints: list[str],
+        locator_hints: list[str],
+    ) -> bool:
+        """Prefer deterministic normative routing for explicit document-aware questions."""
+
+        if heuristic.intent not in {QueryIntent.NORMATIVE_RETRIEVAL, QueryIntent.MIXED_RETRIEVAL}:
+            return False
+        if intent not in {QueryIntent.CLARIFY, QueryIntent.NO_RETRIEVAL}:
+            return False
+        if not (document_hints or heuristic.document_hints):
+            return False
+        if not (locator_hints or heuristic.locator_hints or heuristic.subject):
+            return False
+        return True
 
 
 def _merge_unique(left: list[str], right: list[str]) -> list[str]:
