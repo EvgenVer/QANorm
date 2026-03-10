@@ -7,16 +7,22 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import uuid4
 
+from qanorm.agents.answer_synthesizer import StructuredAnswer
 from qanorm.db.types import EvidenceSourceKind, FreshnessCheckStatus, FreshnessStatus, JobStatus, JobType, StatusNormalized
-from qanorm.models import Document, DocumentSource, DocumentVersion, FreshnessCheck, IngestionJob, QAEvidence, UpdateEvent
+from qanorm.models import Document, DocumentSource, DocumentVersion, FreshnessCheck, IngestionJob, QAEvidence, QAMessage, QAQuery, UpdateEvent
+from qanorm.models.qa_state import EvidenceBundle, QueryState
 from qanorm.parsers.card_parser import DocumentCardData
 from qanorm.services.qa.freshness_service import (
+    annotate_answer_with_freshness,
+    build_freshness_warning_messages,
+    connect_freshness_branch,
+    enrich_persisted_answer_with_freshness,
     evaluate_freshness_check,
     load_local_document_freshness_state,
     schedule_freshness_checks,
     should_run_freshness_check,
 )
-from qanorm.workers.stage2 import document_refresh_job, freshness_check_job
+from qanorm.workers.stage2 import document_refresh_job, freshness_check_job, post_answer_enrichment_job
 
 
 def test_should_run_freshness_check_only_for_normative_rows() -> None:
@@ -276,6 +282,178 @@ def test_stage2_freshness_jobs_wrap_service_calls(monkeypatch) -> None:
 
     assert freshness_payload["status"] == "fresh"
     assert refresh_payload["status"] == "refresh_in_progress"
+
+
+def test_connect_freshness_branch_schedules_checks_without_blocking(monkeypatch) -> None:
+    session = MagicMock()
+    query = QAQuery(id=uuid4(), session_id=uuid4(), message_id=uuid4(), query_text="test")
+    query.requires_freshness_check = True
+    check = FreshnessCheck(id=uuid4(), query_id=query.id, document_id=uuid4())
+    evidence = QAEvidence(query_id=query.id, source_kind=EvidenceSourceKind.NORMATIVE, document_id=check.document_id)
+    scheduled_ids: list[str] = []
+
+    monkeypatch.setattr(
+        "qanorm.services.qa.freshness_service.schedule_freshness_checks",
+        lambda _session, **kwargs: [check],
+    )
+
+    async def _scheduler(item):
+        scheduled_ids.append(str(item.id))
+        return {"status": "queued"}
+
+    result = asyncio.run(
+        connect_freshness_branch(
+            session,
+            query=query,
+            evidence_rows=[evidence],
+            scheduler=_scheduler,
+        )
+    )
+
+    assert result == [check]
+    assert scheduled_ids == [str(check.id)]
+
+
+def test_annotate_answer_with_freshness_adds_warning_block() -> None:
+    answer = StructuredAnswer(
+        answer_text="Base answer",
+        markdown="## Answer\n\nBase answer",
+        answer_format="markdown",
+        coverage_status=SimpleNamespace(value="partial"),
+        has_stale_sources=False,
+        has_external_sources=False,
+        assumptions=[],
+        limitations=[],
+        warnings=[],
+        sections=[],
+        model_name="test-model",
+    )
+    result = annotate_answer_with_freshness(
+        answer,
+        checks=[
+            FreshnessCheck(
+                id=uuid4(),
+                query_id=uuid4(),
+                document_id=uuid4(),
+                local_edition_label="2023",
+                remote_edition_label="2024",
+                check_status=FreshnessCheckStatus.STALE,
+                details_json={"document_code": "SP 1"},
+            )
+        ],
+    )
+
+    assert result.has_stale_sources is True
+    assert "### Freshness" in result.markdown
+    assert "2023" in result.markdown
+    assert "2024" in result.markdown
+
+
+def test_build_freshness_warning_messages_mentions_local_and_remote_editions() -> None:
+    warnings = build_freshness_warning_messages(
+        [
+            FreshnessCheck(
+                id=uuid4(),
+                query_id=uuid4(),
+                document_id=uuid4(),
+                local_edition_label="2023",
+                remote_edition_label="2024",
+                check_status=FreshnessCheckStatus.REFRESH_IN_PROGRESS,
+                details_json={"document_code": "SP 35.13330.2011"},
+            )
+        ]
+    )
+
+    assert len(warnings) == 1
+    assert "SP 35.13330.2011" in warnings[0]
+    assert "2023" in warnings[0]
+    assert "2024" in warnings[0]
+
+
+def test_enrich_persisted_answer_with_freshness_updates_answer_and_message(monkeypatch) -> None:
+    query = QAQuery(id=uuid4(), session_id=uuid4(), message_id=uuid4(), query_text="test")
+    answer_row = SimpleNamespace(answer_text="## Answer", has_stale_sources=False)
+    message_row = QAMessage(session_id=query.session_id, role="assistant", content="## Answer", metadata_json={})
+    check = FreshnessCheck(
+        id=uuid4(),
+        query_id=query.id,
+        document_id=uuid4(),
+        local_edition_label="2023",
+        remote_edition_label="2024",
+        check_status=FreshnessCheckStatus.STALE,
+        details_json={"document_code": "SP 1"},
+    )
+
+    class _FakeSession:
+        def __init__(self) -> None:
+            self.rows = []
+
+        def add(self, row):
+            self.rows.append(row)
+
+        def flush(self):
+            return None
+
+        def get(self, model, value):
+            return query
+
+    class _AnswerRepository:
+        def __init__(self, _session) -> None:
+            self.saved = None
+
+        def get_by_query(self, query_id):
+            return answer_row
+
+        def save(self, answer):
+            self.saved = answer
+            return answer
+
+    class _MessageRepository:
+        def __init__(self, _session) -> None:
+            self.saved = None
+
+        def get_latest_assistant_for_session(self, session_id):
+            return message_row
+
+        def save(self, message):
+            self.saved = message
+            return message
+
+    class _CheckRepository:
+        def __init__(self, _session) -> None:
+            return None
+
+        def list_for_query(self, query_id):
+            return [check]
+
+    monkeypatch.setattr("qanorm.services.qa.freshness_service.QAAnswerRepository", _AnswerRepository)
+    monkeypatch.setattr("qanorm.services.qa.freshness_service.QAMessageRepository", _MessageRepository)
+    monkeypatch.setattr("qanorm.services.qa.freshness_service.FreshnessCheckRepository", _CheckRepository)
+
+    result = enrich_persisted_answer_with_freshness(_FakeSession(), query_id=query.id)
+
+    assert result["status"] == "ok"
+    assert "### Freshness" in answer_row.answer_text
+    assert message_row.metadata_json["has_stale_sources"] is True
+
+
+def test_post_answer_enrichment_job_wraps_service_call(monkeypatch) -> None:
+    query_id = uuid4()
+    fake_session = object()
+
+    @contextmanager
+    def _fake_scope():
+        yield fake_session
+
+    monkeypatch.setattr(
+        "qanorm.workers.stage2.enrich_persisted_answer_with_freshness",
+        lambda session, query_id: {"status": "ok", "query_id": str(query_id)},
+    )
+    monkeypatch.setattr("qanorm.workers.stage2.session_scope", _fake_scope)
+
+    payload = asyncio.run(post_answer_enrichment_job({}, {"query_id": str(query_id)}))
+
+    assert payload["status"] == "ok"
 
 
 def _metadata(

@@ -15,7 +15,11 @@ from arq.connections import RedisSettings
 from redis import asyncio as redis_asyncio
 
 from qanorm.db.session import session_scope
-from qanorm.services.qa.freshness_service import evaluate_freshness_check, queue_refresh_for_freshness_check
+from qanorm.services.qa.freshness_service import (
+    enrich_persisted_answer_with_freshness,
+    evaluate_freshness_check,
+    queue_refresh_for_freshness_check,
+)
 from qanorm.services.qa.open_web_service import normalize_open_web_results_to_evidence, search_open_web
 from qanorm.services.qa.session_service import SessionService
 from qanorm.services.qa.trusted_sources_service import sync_trusted_source
@@ -182,6 +186,16 @@ async def document_refresh_job(ctx: dict[str, Any], payload: dict[str, Any]) -> 
     return result.to_payload()
 
 
+async def post_answer_enrichment_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    """Apply freshness warnings to the persisted answer after background checks finish."""
+
+    with session_scope() as session:
+        return enrich_persisted_answer_with_freshness(
+            session,
+            query_id=UUID(str(payload["query_id"])),
+        )
+
+
 async def trusted_source_sync_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     """Synchronize one configured trusted-source adapter into the local store."""
 
@@ -254,6 +268,7 @@ class Stage2WorkerSettings:
         cleanup_expired_sessions_job,
         freshness_check_job,
         document_refresh_job,
+        post_answer_enrichment_job,
         trusted_source_sync_job,
         open_web_research_job,
     ]

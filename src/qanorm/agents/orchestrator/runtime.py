@@ -12,10 +12,11 @@ from sqlalchemy.orm import Session
 from qanorm.agents.planner import PlannedSubtask, QueryAnalysis, QueryAnalyzer, QueryTaskDecomposer
 from qanorm.audit import AuditWriter
 from qanorm.db.types import QueryStatus, SubtaskStatus
-from qanorm.models import AuditEvent, QAQuery, QASubtask
+from qanorm.models import AuditEvent, QAEvidence, QAQuery, QASubtask
 from qanorm.models.qa_state import QueryState, SubtaskState
 from qanorm.repositories import AuditEventRepository, QAQueryRepository, QASubtaskRepository
 from qanorm.services.qa import ContextService
+from qanorm.services.qa.freshness_service import connect_freshness_branch
 from qanorm.settings import RuntimeConfig, get_qa_config, get_settings
 from qanorm.tools.base import ToolRegistry
 from qanorm.workers.stage2 import publish_progress_event
@@ -163,6 +164,36 @@ class QueryOrchestrator:
             },
         )
         return QueryPlanningResult(state=persisted, analysis=analysis, planned_subtasks=planned_subtasks)
+
+    async def schedule_freshness_branch(
+        self,
+        *,
+        query_id: UUID,
+        evidence_rows: list[QAEvidence],
+        scheduler: Callable[[Any], Awaitable[dict[str, Any]] | dict[str, Any] | None] | None = None,
+    ) -> list[Any]:
+        """Attach the non-blocking freshness branch after normative evidence is available."""
+
+        query = self._require_query(query_id)
+        checks = await connect_freshness_branch(
+            self.session,
+            query=query,
+            evidence_rows=evidence_rows,
+            scheduler=scheduler,
+        )
+        if not checks:
+            return []
+        self._record_transition(
+            query=query,
+            event_type="freshness_branch_connected",
+            payload={"freshness_check_count": len(checks), "non_blocking": True},
+        )
+        await self._publish(
+            query.id,
+            "freshness_branch_connected",
+            {"freshness_check_count": len(checks), "non_blocking": True},
+        )
+        return checks
 
     def _require_query(self, query_id: UUID) -> QAQuery:
         """Load one stored query or fail fast."""

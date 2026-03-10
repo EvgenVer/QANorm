@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from typing import Any, Iterable
+from dataclasses import asdict, dataclass, replace
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Iterable
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from qanorm.audit import AuditWriter
 from qanorm.db.types import EvidenceSourceKind, FreshnessCheckStatus, FreshnessStatus, JobType
 from qanorm.jobs.scheduler import create_job
-from qanorm.models import Document, DocumentSource, DocumentVersion, FreshnessCheck, IngestionJob, QAEvidence, UpdateEvent
+from qanorm.models import Document, DocumentSource, DocumentVersion, FreshnessCheck, IngestionJob, QAEvidence, QAQuery, UpdateEvent
 from qanorm.normalizers.codes import normalize_document_code
 from qanorm.repositories import (
     DocumentRepository,
@@ -19,6 +19,8 @@ from qanorm.repositories import (
     DocumentVersionRepository,
     FreshnessCheckRepository,
     IngestionJobRepository,
+    QAAnswerRepository,
+    QAMessageRepository,
     UpdateEventRepository,
 )
 from qanorm.services.refresh_service import (
@@ -28,6 +30,12 @@ from qanorm.services.refresh_service import (
 )
 from qanorm.observability import increment_event, set_verification_metric
 from qanorm.utils.text import normalize_whitespace
+
+if TYPE_CHECKING:
+    from qanorm.agents.answer_synthesizer import StructuredAnswer
+
+
+FreshnessJobScheduler = Callable[[FreshnessCheck], Awaitable[dict[str, Any]] | dict[str, Any] | None]
 
 
 @dataclass(slots=True, frozen=True)
@@ -124,6 +132,44 @@ def schedule_freshness_checks(
             )
         )
 
+    return scheduled
+
+
+async def connect_freshness_branch(
+    session: Session,
+    *,
+    query: QAQuery,
+    evidence_rows: Iterable[QAEvidence],
+    scheduler: FreshnessJobScheduler | None = None,
+) -> list[FreshnessCheck]:
+    """Schedule non-blocking freshness checks and optionally queue worker jobs."""
+
+    scheduled = schedule_freshness_checks(
+        session,
+        query_id=query.id,
+        evidence_rows=evidence_rows,
+        query_requires_freshness_check=query.requires_freshness_check,
+        reason="orchestrator_non_blocking_branch",
+    )
+    if not scheduled:
+        return []
+
+    AuditWriter(session).write(
+        session_id=query.session_id,
+        query_id=query.id,
+        event_type="freshness_branch_scheduled",
+        actor_kind="freshness_service",
+        payload_json={
+            "scheduled_check_count": len(scheduled),
+            "document_ids": [str(item.document_id) for item in scheduled],
+            "non_blocking": True,
+        },
+    )
+    if scheduler is not None:
+        for check in scheduled:
+            maybe_result = scheduler(check)
+            if maybe_result is not None and hasattr(maybe_result, "__await__"):
+                await maybe_result
     return scheduled
 
 
@@ -256,6 +302,128 @@ def queue_refresh_for_freshness_check(
         payload_json=result.to_payload(),
     )
     return result
+
+
+def build_freshness_warning_messages(
+    checks: Iterable[FreshnessCheck | FreshnessEvaluationResult],
+) -> list[str]:
+    """Build user-facing stale-source warnings with local and remote editions."""
+
+    warnings: list[str] = []
+    for item in checks:
+        check_status = item.check_status if isinstance(item, FreshnessEvaluationResult) else item.check_status
+        if check_status == FreshnessCheckStatus.FRESH:
+            continue
+        document_code = item.document_code if isinstance(item, FreshnessEvaluationResult) else _resolve_check_document_code(item)
+        local_edition = item.local_edition_label or "unknown"
+        remote_edition = item.remote_edition_label or "unknown"
+        if check_status == FreshnessCheckStatus.STALE:
+            warnings.append(
+                f"Freshness warning for {document_code}: the answer used local edition '{local_edition}' "
+                f"while remote edition '{remote_edition}' is newer and refresh has not completed yet."
+            )
+        elif check_status == FreshnessCheckStatus.REFRESH_IN_PROGRESS:
+            warnings.append(
+                f"Freshness warning for {document_code}: local edition '{local_edition}' is being refreshed "
+                f"towards remote edition '{remote_edition}'."
+            )
+        elif check_status == FreshnessCheckStatus.REFRESH_FAILED:
+            warnings.append(
+                f"Freshness warning for {document_code}: remote edition '{remote_edition}' was detected, "
+                f"but refresh from local edition '{local_edition}' failed."
+            )
+        elif check_status == FreshnessCheckStatus.FAILED:
+            warnings.append(
+                f"Freshness warning for {document_code}: document freshness could not be verified; "
+                f"local edition '{local_edition}' was used."
+            )
+    return warnings
+
+
+def annotate_answer_with_freshness(
+    answer: "StructuredAnswer",
+    *,
+    checks: Iterable[FreshnessCheck | FreshnessEvaluationResult],
+) -> "StructuredAnswer":
+    """Attach freshness warnings and edition annotations to a synthesized answer."""
+
+    freshness_warnings = build_freshness_warning_messages(checks)
+    if not freshness_warnings:
+        return answer
+
+    warnings = [*answer.warnings]
+    for warning in freshness_warnings:
+        if warning not in warnings:
+            warnings.append(warning)
+
+    freshness_block = "### Freshness\n\n" + "\n".join(f"- {item}" for item in freshness_warnings)
+    markdown = answer.markdown if "### Freshness" in answer.markdown else f"{answer.markdown}\n\n{freshness_block}"
+    answer_text = answer.answer_text
+    if freshness_warnings:
+        answer_text = f"{answer.answer_text}\n\n" + "\n".join(freshness_warnings)
+
+    return replace(
+        answer,
+        answer_text=answer_text.strip(),
+        markdown=markdown.strip(),
+        has_stale_sources=True,
+        warnings=warnings,
+    )
+
+
+def enrich_persisted_answer_with_freshness(
+    session: Session,
+    *,
+    query_id: UUID,
+) -> dict[str, Any]:
+    """Update the persisted answer and assistant message with freshness warnings."""
+
+    answer_repository = QAAnswerRepository(session)
+    message_repository = QAMessageRepository(session)
+    check_repository = FreshnessCheckRepository(session)
+
+    query = session.get(QAQuery, query_id)
+    if query is None:
+        raise ValueError(f"Query not found for freshness enrichment: {query_id}")
+
+    answer_row = answer_repository.get_by_query(query.id)
+    if answer_row is None:
+        return {"status": "skipped", "reason": "answer_not_found", "query_id": str(query.id)}
+
+    checks = check_repository.list_for_query(query.id)
+    warnings = build_freshness_warning_messages(checks)
+    if not warnings:
+        return {"status": "skipped", "reason": "no_actionable_freshness_results", "query_id": str(query.id)}
+
+    freshness_block = "### Freshness\n\n" + "\n".join(f"- {item}" for item in warnings)
+    if "### Freshness" not in answer_row.answer_text:
+        answer_row.answer_text = f"{answer_row.answer_text}\n\n{freshness_block}".strip()
+    answer_row.has_stale_sources = True
+    answer_repository.save(answer_row)
+
+    assistant_message = message_repository.get_latest_assistant_for_session(query.session_id)
+    if assistant_message is not None:
+        if "### Freshness" not in assistant_message.content:
+            assistant_message.content = f"{assistant_message.content}\n\n{freshness_block}".strip()
+        metadata = dict(assistant_message.metadata_json or {})
+        metadata["has_stale_sources"] = True
+        metadata["freshness_warnings"] = warnings
+        assistant_message.metadata_json = metadata
+        message_repository.save(assistant_message)
+
+    AuditWriter(session).write(
+        session_id=query.session_id,
+        query_id=query.id,
+        event_type="post_answer_enrichment_completed",
+        actor_kind="freshness_service",
+        payload_json={"warning_count": len(warnings)},
+    )
+    return {
+        "status": "ok",
+        "query_id": str(query.id),
+        "warning_count": len(warnings),
+        "assistant_message_updated": assistant_message is not None,
+    }
 
 
 def _compare_local_and_remote(
@@ -409,6 +577,15 @@ def _map_to_freshness_status(check_status: FreshnessCheckStatus) -> FreshnessSta
         FreshnessCheckStatus.PENDING: FreshnessStatus.UNKNOWN,
     }
     return mapping[check_status]
+
+
+def _resolve_check_document_code(check: FreshnessCheck) -> str:
+    """Best-effort document label for warning messages without extra joins."""
+
+    if check.document is not None and check.document.normalized_code:
+        return check.document.normalized_code
+    details = check.details_json or {}
+    return str(details.get("document_code") or check.document_id)
 
 
 def _iso_date(value: Any) -> str | None:
