@@ -63,6 +63,7 @@ class QAQuery(Base):
         server_default=text("'[]'::jsonb"),
     )
     retrieval_mode: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    document_resolution: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     requires_freshness_check: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     used_open_web: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     used_trusted_web: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

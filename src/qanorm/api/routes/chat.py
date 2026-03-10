@@ -110,6 +110,7 @@ def get_query_details(
         document_hints=list(query.document_hints or []),
         locator_hints=list(query.locator_hints or []),
         retrieval_mode=query.retrieval_mode,
+        document_resolution=dict(query.document_resolution) if query.document_resolution else None,
         query_text=query.query_text,
         requires_freshness_check=query.requires_freshness_check,
         used_open_web=query.used_open_web,

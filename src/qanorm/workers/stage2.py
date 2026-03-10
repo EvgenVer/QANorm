@@ -16,10 +16,16 @@ from redis import asyncio as redis_asyncio
 
 from qanorm.agents.planner.query_intent import QueryIntent
 from qanorm.db.session import session_scope
-from qanorm.db.types import QueryStatus, SubtaskStatus
-from qanorm.models import QAQuery
-from qanorm.repositories import QAEvidenceRepository, QAQueryRepository, QASubtaskRepository
-from qanorm.services.qa.retrieval_service import RetrievalRequest, persist_normative_evidence, retrieve_normative_evidence
+from qanorm.db.types import QueryStatus, SearchScope, SearchStatus, SubtaskStatus
+from qanorm.models import QAQuery, SearchEvent
+from qanorm.repositories import QAEvidenceRepository, QAQueryRepository, QASubtaskRepository, SearchEventRepository
+from qanorm.audit import AuditWriter
+from qanorm.services.qa.document_resolver import DocumentResolver
+from qanorm.services.qa.retrieval_service import (
+    RetrievalRequest,
+    persist_normative_evidence,
+    retrieve_normative_evidence_with_resolution,
+)
 from qanorm.services.qa.freshness_service import (
     enrich_persisted_answer_with_freshness,
     evaluate_freshness_check,
@@ -164,6 +170,7 @@ async def process_query_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dic
         query_repository = QAQueryRepository(session)
         subtask_repository = QASubtaskRepository(session)
         evidence_repository = QAEvidenceRepository(session)
+        search_event_repository = SearchEventRepository(session)
         query = query_repository.get(query_id)
         if query is None:
             raise ValueError(f"Query not found: {query_id}")
@@ -202,11 +209,46 @@ async def process_query_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dic
 
                 try:
                     if planned_subtask.route == "normative":
-                        retrieval_result = await retrieve_normative_evidence(
+                        resolution = DocumentResolver(session).resolve(state)
+                        state.document_resolution = resolution.to_payload()
+                        query_repository.update_state(
+                            query,
+                            status=query.status,
+                            document_resolution=state.document_resolution,
+                        )
+                        AuditWriter(session).write(
+                            session_id=query.session_id,
+                            query_id=query.id,
+                            subtask_id=stored_subtask.id,
+                            event_type="document_resolution_completed",
+                            actor_kind="document_resolver",
+                            payload_json=state.document_resolution,
+                        )
+                        retrieval_result, retrieval_metadata = await retrieve_normative_evidence_with_resolution(
                             session,
                             request=RetrievalRequest(query_text=contextual_query_text, limit=8),
+                            resolution=resolution,
                             embedding_provider=providers.embeddings,
                             runtime_config=settings,
+                        )
+                        search_event_repository.add(
+                            SearchEvent(
+                                query_id=query.id,
+                                subtask_id=stored_subtask.id,
+                                provider_name="stage1_normative_corpus",
+                                search_scope=SearchScope.NORMATIVE,
+                                query_text=contextual_query_text,
+                                result_count=len(retrieval_result.all_hits),
+                                status=SearchStatus.COMPLETED,
+                            )
+                        )
+                        AuditWriter(session).write(
+                            session_id=query.session_id,
+                            query_id=query.id,
+                            subtask_id=stored_subtask.id,
+                            event_type="normative_retrieval_strategy_selected",
+                            actor_kind="retrieval_service",
+                            payload_json=retrieval_metadata | {"document_resolution": state.document_resolution},
                         )
                         stored_evidence = persist_normative_evidence(
                             session,
@@ -215,7 +257,11 @@ async def process_query_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dic
                             hits=retrieval_result.all_hits,
                         )
                         state.evidence_bundle.normative.extend(stored_evidence)
-                        stored_subtask.result_summary = f"normative_hits={len(stored_evidence)}"
+                        stored_subtask.result_summary = (
+                            f"normative_hits={len(stored_evidence)}"
+                            f";scope={retrieval_metadata['final_scope']}"
+                            f";fallback={str(retrieval_metadata['fallback_used']).lower()}"
+                        )
                     elif planned_subtask.route == "trusted_web":
                         trusted_hits = await search_trusted_sources(
                             session,

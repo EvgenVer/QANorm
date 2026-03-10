@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from qanorm.audit import AuditWriter
@@ -22,6 +22,7 @@ from qanorm.models import (
     QAQuery,
     RetrievalChunk,
 )
+from qanorm.services.qa.document_resolver import DocumentResolutionResult, DocumentResolutionStatus
 from qanorm.normalizers.codes import clean_document_code, normalize_document_code
 from qanorm.observability import increment_event, set_backfill_metric, set_retrieval_metric
 from qanorm.providers import create_provider_registry
@@ -45,6 +46,8 @@ class RetrievalRequest:
     offset: int = 0
     document_type: str | None = None
     document_ids: list[UUID] = field(default_factory=list)
+    locator_hint: str | None = None
+    retrieval_scope: str = "global"
     active_only: bool = True
     include_related_documents: bool = True
     enable_vector_search: bool = True
@@ -120,6 +123,62 @@ async def retrieve_normative_evidence(
     set_retrieval_metric("secondary_hit_count", float(len(secondary_hits)))
     increment_event("retrieval_request", status="ok")
     return RetrievalResult(primary_hits=primary_hits, secondary_hits=secondary_hits)
+
+
+async def retrieve_normative_evidence_with_resolution(
+    session: Session,
+    *,
+    request: RetrievalRequest,
+    resolution: DocumentResolutionResult | None = None,
+    embedding_provider: EmbeddingProvider | None = None,
+    runtime_config: RuntimeConfig | None = None,
+) -> tuple[RetrievalResult, dict[str, Any]]:
+    """Prefer document-scoped retrieval and fall back to global retrieval only when needed."""
+
+    metadata = {
+        "resolution_status": resolution.status.value if resolution is not None else "unresolved",
+        "initial_scope": "global",
+        "fallback_used": False,
+    }
+    if resolution is None or resolution.status is not DocumentResolutionStatus.RESOLVED:
+        result = await retrieve_normative_evidence(
+            session,
+            request=request,
+            embedding_provider=embedding_provider,
+            runtime_config=runtime_config,
+        )
+        metadata["final_scope"] = "global"
+        metadata["result_count"] = len(result.all_hits)
+        return result, metadata
+
+    scoped_request = replace(
+        request,
+        document_ids=resolution.resolved_document_ids,
+        locator_hint=resolution.locator_hint,
+        retrieval_scope=resolution.retrieval_scope,
+    )
+    metadata["initial_scope"] = resolution.retrieval_scope
+    scoped_result = await retrieve_normative_evidence(
+        session,
+        request=scoped_request,
+        embedding_provider=embedding_provider,
+        runtime_config=runtime_config,
+    )
+    if _is_scoped_result_sufficient(scoped_result, locator_hint=resolution.locator_hint):
+        metadata["final_scope"] = resolution.retrieval_scope
+        metadata["result_count"] = len(scoped_result.all_hits)
+        return scoped_result, metadata
+
+    global_result = await retrieve_normative_evidence(
+        session,
+        request=replace(request, locator_hint=resolution.locator_hint, retrieval_scope="global"),
+        embedding_provider=embedding_provider,
+        runtime_config=runtime_config,
+    )
+    metadata["fallback_used"] = True
+    metadata["final_scope"] = "global"
+    metadata["result_count"] = len(global_result.all_hits)
+    return global_result, metadata
 
 
 def normalize_hits_to_evidence(
@@ -283,12 +342,22 @@ def _run_exact_match_lookup(session: Session, *, request: RetrievalRequest) -> l
     """Run code-oriented and locator-oriented retrieval without dense search."""
 
     normalized_code, locator_hint = _split_query_for_locator(request.query_text)
+    effective_locator_hint = request.locator_hint or locator_hint
     predicates = [
         Document.normalized_code == normalized_code,
         Document.display_code.ilike(f"%{clean_document_code(request.query_text)}%"),
     ]
-    if locator_hint:
-        predicates.append(RetrievalChunk.locator.ilike(f"%{locator_hint}%"))
+    if request.document_ids:
+        predicates.extend(
+            [
+                RetrievalChunk.locator.ilike(f"%{effective_locator_hint}%") if effective_locator_hint else literal(False),
+                RetrievalChunk.locator_end.ilike(f"%{effective_locator_hint}%") if effective_locator_hint else literal(False),
+                RetrievalChunk.chunk_text.ilike(f"%{clean_document_code(request.query_text)}%"),
+            ]
+        )
+    elif effective_locator_hint:
+        predicates.append(RetrievalChunk.locator.ilike(f"%{effective_locator_hint}%"))
+        predicates.append(RetrievalChunk.locator_end.ilike(f"%{effective_locator_hint}%"))
     stmt = (
         _build_chunk_query(session, request=request)
         .where(or_(*predicates))
@@ -392,6 +461,16 @@ def _merge_ranked_hits(
         replace(item["hit"], score=item["score"], score_source="+".join(sorted(item["sources"])))
         for item in sliced
     ]
+
+
+def _is_scoped_result_sufficient(result: RetrievalResult, *, locator_hint: str | None) -> bool:
+    """Keep global fallback rare by accepting good scoped hits when they satisfy the explicit locator."""
+
+    if not result.primary_hits:
+        return False
+    if locator_hint:
+        return any(locator_hint.lower() in (hit.locator or "").lower() or locator_hint.lower() in (hit.locator_end or "").lower() for hit in result.primary_hits)
+    return len(result.primary_hits) >= 1
 
 
 def _load_secondary_hits(session: Session, *, primary_hits: list[RetrievalHit], limit: int) -> list[RetrievalHit]:

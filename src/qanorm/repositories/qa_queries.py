@@ -41,6 +41,7 @@ class QAQueryRepository:
         document_hints: list[str] | None = None,
         locator_hints: list[str] | None = None,
         retrieval_mode: str | None = None,
+        document_resolution: dict | None = None,
         requires_freshness_check: bool | None = None,
         used_open_web: bool | None = None,
         used_trusted_web: bool | None = None,
@@ -60,6 +61,8 @@ class QAQueryRepository:
             query.locator_hints = locator_hints
         if retrieval_mode is not None:
             query.retrieval_mode = retrieval_mode
+        if document_resolution is not None:
+            query.document_resolution = document_resolution
         if requires_freshness_check is not None:
             query.requires_freshness_check = requires_freshness_check
         if used_open_web is not None:

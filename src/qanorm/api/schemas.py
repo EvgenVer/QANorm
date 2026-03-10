@@ -136,6 +136,7 @@ class QueryDetailResponse(BaseModel):
     document_hints: list[str] = Field(default_factory=list)
     locator_hints: list[str] = Field(default_factory=list)
     retrieval_mode: str | None = None
+    document_resolution: dict[str, Any] | None = None
     query_text: str
     requires_freshness_check: bool
     used_open_web: bool

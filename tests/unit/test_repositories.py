@@ -252,6 +252,7 @@ def test_qa_query_repository_update_state_updates_flags() -> None:
         document_hints=["СП 63"],
         locator_hints=["п. 8.3"],
         retrieval_mode="clarify",
+        document_resolution={"status": "resolved"},
         used_open_web=True,
         used_trusted_web=True,
         requires_freshness_check=True,
@@ -263,6 +264,7 @@ def test_qa_query_repository_update_state_updates_flags() -> None:
     assert query.document_hints == ["СП 63"]
     assert query.locator_hints == ["п. 8.3"]
     assert query.retrieval_mode == "clarify"
+    assert query.document_resolution == {"status": "resolved"}
     assert query.used_open_web is True
     assert query.used_trusted_web is True
     assert query.requires_freshness_check is True

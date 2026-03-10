@@ -207,17 +207,25 @@ class QueryAnalyzer:
     def _normalize_intent_result(self, payload: dict[str, Any], *, query_text: str) -> QueryIntentResult:
         """Normalize model output and overlay deterministic hints for stability."""
 
-        intent = QueryIntent(str(payload["intent"]))
-        retrieval_mode = RetrievalMode(str(payload["retrieval_mode"]))
+        heuristic = infer_query_intent(query_text)
+        intent_value = payload.get("intent")
+        if intent_value is None:
+            intent = self._derive_legacy_intent(payload, heuristic=heuristic)
+        else:
+            intent = QueryIntent(str(intent_value))
+        retrieval_mode_value = payload.get("retrieval_mode")
+        if retrieval_mode_value is None:
+            retrieval_mode = self._derive_retrieval_mode(intent)
+        else:
+            retrieval_mode = RetrievalMode(str(retrieval_mode_value))
         document_hints = self._normalize_list(payload.get("document_hints"))
         locator_hints = self._normalize_list(payload.get("locator_hints"))
         subject = str(payload.get("subject", "")).strip() or None
         engineering_aspects = self._normalize_list(payload.get("engineering_aspects"))
         constraints = self._normalize_list(payload.get("constraints"))
-        clarification_required = bool(payload["clarification_required"])
+        clarification_required = bool(payload.get("clarification_required", intent is QueryIntent.CLARIFY))
         clarification_question = str(payload.get("clarification_question", "")).strip() or None
 
-        heuristic = infer_query_intent(query_text)
         # Conservative override: ambiguous or non-actionable requests should not slip into retrieval.
         if heuristic.intent in {QueryIntent.CLARIFY, QueryIntent.NO_RETRIEVAL} and intent not in {QueryIntent.CLARIFY, QueryIntent.NO_RETRIEVAL}:
             intent = heuristic.intent
@@ -283,6 +291,30 @@ class QueryAnalyzer:
         if intent_result.intent is QueryIntent.NORMATIVE_RETRIEVAL:
             return "normative"
         return "consultative"
+
+    def _derive_legacy_intent(self, payload: dict[str, Any], *, heuristic: QueryIntentResult) -> QueryIntent:
+        """Preserve compatibility with older planner fixtures that only exposed requires_* flags."""
+
+        if heuristic.intent in {QueryIntent.CLARIFY, QueryIntent.NO_RETRIEVAL}:
+            return heuristic.intent
+        requires_normative = bool(payload.get("requires_normative_retrieval", heuristic.requires_normative_retrieval))
+        requires_external = bool(payload.get("requires_trusted_web")) or bool(payload.get("requires_open_web"))
+        if not requires_normative:
+            return QueryIntent.NO_RETRIEVAL
+        if requires_external:
+            return QueryIntent.MIXED_RETRIEVAL
+        return QueryIntent.NORMATIVE_RETRIEVAL
+
+    def _derive_retrieval_mode(self, intent: QueryIntent) -> RetrievalMode:
+        """Map an intent fallback to the persisted retrieval mode."""
+
+        mapping = {
+            QueryIntent.CLARIFY: RetrievalMode.CLARIFY,
+            QueryIntent.NO_RETRIEVAL: RetrievalMode.NONE,
+            QueryIntent.NORMATIVE_RETRIEVAL: RetrievalMode.NORMATIVE,
+            QueryIntent.MIXED_RETRIEVAL: RetrievalMode.MIXED,
+        }
+        return mapping[intent]
 
 
 def _merge_unique(left: list[str], right: list[str]) -> list[str]:

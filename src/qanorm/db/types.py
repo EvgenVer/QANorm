@@ -181,6 +181,7 @@ class SecuritySeverity(StrEnum):
 class SearchScope(StrEnum):
     """Search scopes supported by the orchestration layer."""
 
+    NORMATIVE = "normative"
     TRUSTED_WEB = "trusted_web"
     OPEN_WEB = "open_web"
 

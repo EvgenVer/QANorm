@@ -288,6 +288,7 @@ class QueryOrchestrator:
             clarification_required=query.clarification_required,
             document_hints=list(query.document_hints or []),
             locator_hints=list(query.locator_hints or []),
+            document_resolution=dict(query.document_resolution) if query.document_resolution else None,
             recent_messages=prompt_context.recent_messages,
         )
 
@@ -305,7 +306,7 @@ class QueryOrchestrator:
         state.engineering_aspects = list(analysis.engineering_aspects)
         state.constraints = list(analysis.constraints)
         state.requires_freshness_check = analysis.requires_freshness_check
-        state.used_trusted_web = False
+        state.used_trusted_web = analysis.requires_trusted_web
         state.open_web_fallback_allowed = analysis.requires_open_web
         state.used_open_web = False
 
@@ -316,7 +317,7 @@ class QueryOrchestrator:
         query.locator_hints = list(analysis.locator_hints)
         query.retrieval_mode = analysis.retrieval_mode.value
         query.requires_freshness_check = analysis.requires_freshness_check
-        query.used_trusted_web = False
+        query.used_trusted_web = analysis.requires_trusted_web
         query.used_open_web = False
         self.session.flush()
 

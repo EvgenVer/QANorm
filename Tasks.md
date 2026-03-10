@@ -1097,18 +1097,18 @@
 
 ### Блок AR. Redesign: document resolution и scoped normative retrieval
 
-919. [ ] Создать файл `src/qanorm/services/qa/document_resolver.py`.
-920. [ ] Реализовать нормализацию коротких ссылок на документы вида `СП63`, `СП 20`, `ГОСТ 21` и аналогичных сокращений.
-921. [ ] Реализовать поиск кандидатов документа по `normalized_code`, `display_code`, типу документа и связанным эвристикам.
-922. [ ] Реализовать scoring уверенности и распознавание неоднозначности при разрешении документа.
-923. [ ] Реализовать locator-aware resolution для запросов вида `п. 8.3 СП 63`, `таблица 5 СП20`, `п. 7.4.2 СП 70`.
-924. [ ] Интегрировать `document_resolver` в orchestration pipeline до нормативного retrieval.
-925. [ ] Расширить `retrieval_service` поддержкой document-scoped exact-match внутри разрешенного документа.
-926. [ ] Расширить `retrieval_service` поддержкой document-scoped FTS и document-scoped vector search.
-927. [ ] Реализовать global retrieval только как fallback при отсутствии уверенного document resolution или при недостаточности scoped retrieval.
-928. [ ] Реализовать сохранение metadata document resolution и retrieval mode в `qa_query`, `search_events` и/или audit trail.
-929. [ ] Реализовать unit-тесты на `document_resolver`, ambiguity handling и scoped retrieval.
-930. [ ] Реализовать интеграционный тест document-aware retrieval на запросах с явным указанием нормы на наполненной БД Этапа 1.
+919. [x] Создать файл `src/qanorm/services/qa/document_resolver.py`.
+920. [x] Реализовать нормализацию коротких ссылок на документы вида `СП63`, `СП 20`, `ГОСТ 21` и аналогичных сокращений.
+921. [x] Реализовать поиск кандидатов документа по `normalized_code`, `display_code`, типу документа и связанным эвристикам.
+922. [x] Реализовать scoring уверенности и распознавание неоднозначности при разрешении документа.
+923. [x] Реализовать locator-aware resolution для запросов вида `п. 8.3 СП 63`, `таблица 5 СП20`, `п. 7.4.2 СП 70`.
+924. [x] Интегрировать `document_resolver` в orchestration pipeline до нормативного retrieval.
+925. [x] Расширить `retrieval_service` поддержкой document-scoped exact-match внутри разрешенного документа.
+926. [x] Расширить `retrieval_service` поддержкой document-scoped FTS и document-scoped vector search.
+927. [x] Реализовать global retrieval только как fallback при отсутствии уверенного document resolution или при недостаточности scoped retrieval.
+928. [x] Реализовать сохранение metadata document resolution и retrieval mode в `qa_query`, `search_events` и/или audit trail.
+929. [x] Реализовать unit-тесты на `document_resolver`, ambiguity handling и scoped retrieval.
+930. [x] Реализовать интеграционный тест document-aware retrieval на запросах с явным указанием нормы на наполненной БД Этапа 1.
 
 ### Блок AS. Redesign: query rewriting, reranking и отбор evidence
 

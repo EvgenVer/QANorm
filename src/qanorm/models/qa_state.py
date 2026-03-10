@@ -72,6 +72,7 @@ class PromptRenderContext:
     subject: str | None = None
     engineering_aspects: list[str] = field(default_factory=list)
     constraints: list[str] = field(default_factory=list)
+    document_resolution: dict | None = None
     recent_messages: list[QAMessage] = field(default_factory=list)
     evidence_bundle: EvidenceBundle = field(default_factory=EvidenceBundle)
     stale_warning_messages: list[str] = field(default_factory=list)
@@ -111,6 +112,7 @@ class QueryState:
     subject: str | None = None
     engineering_aspects: list[str] = field(default_factory=list)
     constraints: list[str] = field(default_factory=list)
+    document_resolution: dict | None = None
     recent_messages: list[QAMessage] = field(default_factory=list)
     subtasks: list[SubtaskState] = field(default_factory=list)
     evidence_bundle: EvidenceBundle = field(default_factory=EvidenceBundle)
@@ -142,6 +144,7 @@ class QueryState:
             subject=self.subject,
             engineering_aspects=list(self.engineering_aspects),
             constraints=list(self.constraints),
+            document_resolution=dict(self.document_resolution) if self.document_resolution else None,
             recent_messages=list(self.recent_messages),
             evidence_bundle=self.evidence_bundle,
         )

@@ -10,7 +10,7 @@ from qanorm.utils.text import normalize_whitespace
 
 
 DOCUMENT_CODE_RE = re.compile(
-    r"\b(?:ГОСТ|СП|СНиП|РД|СТО|ВСП|ISO|EN)\s*[-–]?\s*\d+(?:\.\d+)*(?:[-/]\d+(?:\.\d+)*)*",
+    r"\b(?:ГОСТ|СП|SP|СНиП|РД|СТО|ВСП|ISO|EN)\s*[-–]?\s*\d+(?:\.\d+)*(?:[-/]\d+(?:\.\d+)*)*",
     re.IGNORECASE,
 )
 LOCATOR_RES = (
@@ -25,6 +25,8 @@ NON_ENGINEERING_PATTERNS = (
     "привет",
     "здравств",
     "как дела",
+    "hello",
+    "hi",
     "расскажи анекдот",
     "погода",
     "курс валют",
@@ -51,6 +53,14 @@ ENGINEERING_HINTS = (
     "здани",
     "сооруж",
     "лестниц",
+    "fire",
+    "safety",
+    "evacuation",
+    "bridge",
+    "culvert",
+    "station",
+    "requirement",
+    "requirements",
     "проект",
     "монтаж",
     "строит",
@@ -66,6 +76,11 @@ NORMATIVE_HINTS = (
     "по гост",
     "по снип",
     "пункт",
+    "clause",
+    "section",
+    "table",
+    "requirement",
+    "required",
     "раздел",
     "таблица",
     "приложение",
