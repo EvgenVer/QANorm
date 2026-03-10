@@ -9,6 +9,12 @@ Tasks:
 Current query:
 {query_text}
 
+Session summary:
+{session_summary}
+
+Recent messages:
+{recent_messages_text}
+
 Normative evidence:
 {normative_evidence_text}
 

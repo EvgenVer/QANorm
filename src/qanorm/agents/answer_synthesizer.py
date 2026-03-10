@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -139,27 +140,33 @@ class AnswerSynthesizer:
         assumptions_list = [item.strip() for item in (assumptions or []) if item.strip()]
         limitations_list = [item.strip() for item in (limitations or []) if item.strip()]
         prompt = self.prompt_registry.render("answer_synthesizer", context=state.build_prompt_context())
-        response = await self.provider.generate(
-            ChatRequest(
-                model=self.provider.model,
-                messages=[
-                    ChatMessage(role="system", content=prompt.text),
-                    ChatMessage(
-                        role="user",
-                        content=self._build_instruction(
-                            query_text=state.query_text,
-                            evidence_bundle=state.evidence_bundle,
-                            assumptions=assumptions_list,
-                            limitations=limitations_list,
+        response_content = ""
+        try:
+            response = await self.provider.generate(
+                ChatRequest(
+                    model=self.provider.model,
+                    messages=[
+                        ChatMessage(role="system", content=prompt.text),
+                        ChatMessage(
+                            role="user",
+                            content=self._build_instruction(
+                                state=state,
+                                query_text=state.query_text,
+                                evidence_bundle=state.evidence_bundle,
+                                assumptions=assumptions_list,
+                                limitations=limitations_list,
+                            ),
                         ),
-                    ),
-                ],
-                temperature=0.0,
-                max_tokens=1100,
-                metadata={"prompt_metadata": prompt.metadata},
+                    ],
+                    temperature=0.0,
+                    max_tokens=1100,
+                    metadata={"prompt_metadata": prompt.metadata},
+                )
             )
-        )
-        sections = self._parse_sections(response.content)
+            response_content = response.content
+        except Exception:
+            response = None
+        sections = self._parse_sections(response_content)
         if not sections:
             sections = self._fallback_sections(state.evidence_bundle)
 
@@ -186,7 +193,7 @@ class AnswerSynthesizer:
             limitations=limitations_list,
             warnings=warnings,
             sections=prioritized_sections,
-            model_name=self.provider.model,
+            model_name=self.provider.model if response is not None else f"{self.provider.model}:fallback",
         )
 
     def persist_answer(self, *, query: QAQuery, answer: StructuredAnswer) -> tuple[QAAnswer, QAMessage]:
@@ -212,7 +219,11 @@ class AnswerSynthesizer:
                 metadata_json=answer.to_payload(),
             )
         )
-        self.query_repository.update_state(query, status=QueryStatus.COMPLETED)
+        self.query_repository.update_state(
+            query,
+            status=QueryStatus.COMPLETED,
+            finished_at=datetime.now(timezone.utc),
+        )
         if self.session is not None:
             AuditWriter(self.session).write(
                 session_id=query.session_id,
@@ -232,6 +243,7 @@ class AnswerSynthesizer:
     def _build_instruction(
         self,
         *,
+        state: QueryState,
         query_text: str,
         evidence_bundle: EvidenceBundle,
         assumptions: list[str],
@@ -252,6 +264,9 @@ class AnswerSynthesizer:
             "Return only one JSON object using this schema:\n"
             f"{json.dumps(schema, ensure_ascii=False)}\n\n"
             f"Query:\n{query_text}\n\n"
+            f"Session summary:\n{state.session_summary or 'none'}\n\n"
+            "Recent messages:\n"
+            f"{self._render_recent_messages(state)}\n\n"
             f"Normative evidence count: {len(evidence_bundle.normative)}\n"
             f"Trusted web evidence count: {len(evidence_bundle.trusted_web)}\n"
             f"Open web evidence count: {len(evidence_bundle.open_web)}\n"
@@ -415,7 +430,7 @@ class AnswerSynthesizer:
     ) -> str:
         """Render the structured answer into one markdown document."""
 
-        parts = [f"## Ответ\n\nЗапрос: {query_text}"]
+        parts = ["## Ответ"]
         for section in sections:
             parts.append(f"### {section.heading}\n\n{section.body}")
             if section.citations:
@@ -432,6 +447,19 @@ class AnswerSynthesizer:
             parts.append("### Предупреждения\n\n" + "\n".join(f"- {item}" for item in warnings))
         parts.append(f"### Покрытие\n\nСтатус покрытия: `{coverage_status.value}`.")
         return "\n\n".join(parts).strip()
+
+    def _render_recent_messages(self, state: QueryState) -> str:
+        """Render a compact recent history snapshot for follow-up questions."""
+
+        if not state.recent_messages:
+            return "none"
+        rows: list[str] = []
+        for message in state.recent_messages[-4:]:
+            role = getattr(message.role, "value", str(message.role))
+            if role not in {"user", "assistant"}:
+                continue
+            rows.append(f"- {role}: {message.content}")
+        return "\n".join(rows) if rows else "none"
 
     def _evidence_title(self, item: QAEvidence) -> str:
         """Build a readable title for one evidence row."""

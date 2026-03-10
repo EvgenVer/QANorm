@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "QANorm Assistant",
-  description: "Stage 2 engineering assistant chat for normative and external evidence.",
+  title: "QANorm | Ассистент инженера",
+  description: "Русскоязычный интерфейс QANorm для работы с нормативной базой и внешними источниками.",
 };
 
 type RootLayoutProps = {
@@ -13,7 +13,7 @@ type RootLayoutProps = {
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="en">
+    <html lang="ru">
       <body>{children}</body>
     </html>
   );

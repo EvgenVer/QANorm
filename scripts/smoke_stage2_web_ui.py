@@ -54,14 +54,14 @@ def main() -> int:
         raise AssertionError(f"Unexpected web status: {status}")
     page_text = page_bytes.decode("utf-8", errors="replace")
     # These strings come from the visible chat shell and prove the UI bundle was served.
-    _assert_contains(page_text, "QANorm Stage 2")
-    _assert_contains(page_text, "Engineering assistant")
-    _assert_contains(page_text, "Session memory stays scoped to this chat")
+    _assert_contains(page_text, "QANorm")
+    _assert_contains(page_text, "Ассистент инженера")
+    _assert_contains(page_text, "Новая сессия")
 
     status, session_bytes = _request(
         f"{API_BASE_URL}/sessions",
         method="POST",
-        body={"channel": "web"},
+        body={"channel": "web", "external_user_id": "smoke-web-client", "replace_existing": True},
     )
     if status != 200:
         raise AssertionError(f"Session creation failed with status {status}")

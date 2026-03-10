@@ -119,6 +119,33 @@ class QueryState:
             evidence_bundle=self.evidence_bundle,
         )
 
+    def build_contextual_query_text(self, *, include_assistant_turns: bool = False, max_messages: int = 4) -> str:
+        """Build a retrieval-friendly query that preserves recent session context.
+
+        The raw user turn stays first. Recent turns are appended only as compact
+        context so retrieval still anchors on the latest question.
+        """
+
+        recent = self.recent_messages[-max_messages:]
+        context_lines: list[str] = []
+        for message in recent:
+            role_value = getattr(message.role, "value", str(message.role))
+            if role_value == "assistant" and not include_assistant_turns:
+                continue
+            if not message.content.strip():
+                continue
+            prefix = "Пользователь" if role_value == "user" else "Ассистент"
+            context_lines.append(f"{prefix}: {message.content.strip()}")
+        if not context_lines:
+            return self.query_text
+        return "\n".join(
+            [
+                f"Текущий вопрос: {self.query_text}",
+                "Контекст диалога:",
+                *context_lines,
+            ]
+        )
+
     def refresh_evidence_fingerprint(self) -> str:
         """Recompute and persist the current evidence-set fingerprint."""
 
