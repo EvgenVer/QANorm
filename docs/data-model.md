@@ -1,89 +1,19 @@
-# QANorm Data Model
+# Модель данных Stage 1
 
-## 1. Overall Structure
+Основные таблицы:
 
-The data model is split into two layers:
+- `documents` - канонические документы;
+- `document_versions` - найденные версии документа;
+- `document_sources` - источники обнаружения документа;
+- `raw_artifacts` - HTML/PDF/OCR/raw snapshots;
+- `document_nodes` - нормализованная структура документа;
+- `document_references` - ссылки на другие документы;
+- `ingestion_jobs` - очередь фоновых задач;
+- `update_events` - история обновлений.
 
-- `Stage 1`  
-  Canonical regulatory corpus and ingestion trail.
+Принципы:
 
-- `Stage 2`  
-  Retrieval, sessions, answers, evidence, audit, and background checks.
-
-It is also useful to distinguish between:
-
-- `canonical data`  
-  Source-of-truth entities such as `documents`, `document_versions`, and `document_nodes`
-
-- `derived data`  
-  Search or runtime-oriented entities such as `retrieval_chunks`, `chunk_embeddings`, and `qa_evidence`
-
-## 2. Stage 1 Core Tables
-
-- `documents`  
-  Canonical registry of normative documents.
-
-- `document_versions`  
-  Versioned document states and edition metadata.
-
-- `document_nodes`  
-  Canonical structural representation of normalized document content.
-
-- `document_references`  
-  Extracted references between documents.
-
-- `document_sources`  
-  Source provenance for each version.
-
-- `raw_artifacts`  
-  Metadata for raw files and their storage paths.
-
-- `ingestion_jobs`  
-  Queue and operational trail for Stage 1 ingestion.
-
-## 3. Stage 2 Retrieval Tables
-
-- `retrieval_chunks`  
-  Search-oriented chunks derived from `document_nodes`.
-
-- `chunk_embeddings`  
-  Dense embeddings for deduplicated retrieval chunk hashes.
-
-The core relationship is:
-
-`document_versions` -> `document_nodes` -> `retrieval_chunks` -> `chunk_embeddings`
-
-## 4. Session and Answer Runtime
-
-- `qa_sessions`
-- `qa_queries`
-- `qa_subtasks`
-- `qa_messages`
-- `qa_answers`
-- `qa_evidence`
-
-These tables represent:
-
-- user session state;
-- incoming queries;
-- decomposition into subtasks;
-- persisted conversation history;
-- final answers;
-- evidence used to build answers.
-
-## 5. Freshness, Audit, and Tools
-
-- `freshness_checks`
-- `audit_events`
-- `tool_invocations`
-- `search_events`
-- `verification_reports`
-
-These tables cover:
-
-- freshness decisions;
-- audit trail;
-- tool execution tracing;
-- provenance;
-- verification outputs.
-
+- один документ может иметь несколько версий;
+- в активном индексе участвует только одна версия;
+- raw-файлы лежат в файловом хранилище, а БД хранит пути и метаданные;
+- структурная нормализация ведется на уровне `document_nodes`.

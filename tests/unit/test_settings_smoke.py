@@ -4,7 +4,7 @@ from qanorm.logging import configure_logging, get_crawler_logger, get_ingestion_
 from qanorm.settings import load_runtime_config
 
 
-def test_runtime_config_smoke_loads_defaults() -> None:
+def test_runtime_config_smoke_loads_stage1_defaults() -> None:
     settings = load_runtime_config(config_dir=Path("configs"))
 
     assert settings.env.app_env == "local"
@@ -13,10 +13,6 @@ def test_runtime_config_smoke_loads_defaults() -> None:
     assert settings.app.ocr_low_confidence_threshold == 0.7
     assert len(settings.sources.seed_urls) == 4
     assert "взамен" in settings.statuses.active
-    assert settings.qa.search.trusted_domains == ["minstroyrf.gov.ru", "www.wbdg.org"]
-    assert len(settings.trusted_sources.sources) == 2
-    assert settings.trusted_sources.sources[0].search.mode == "site_query"
-    assert settings.trusted_sources.sources[1].language == "en"
 
 
 def test_logging_config_smoke_registers_named_loggers() -> None:

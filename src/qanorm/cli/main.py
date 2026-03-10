@@ -3,22 +3,18 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
 
-from qanorm.db.session import session_scope
 from qanorm.indexing.indexer import reindex
 from qanorm.jobs.worker import run_worker_loop
 from qanorm.services.health import get_health_report
 from qanorm.services.ingestion import check_configuration, run_seed_crawl
 from qanorm.services.metrics import get_ingestion_metrics, get_ingestion_test_run_report
-from qanorm.services.qa.trusted_sources_service import prefetch_trusted_sources
 from qanorm.services.refresh_service import request_document_refresh, run_document_refresh
-from qanorm.settings import get_settings
 
 
 def _build_alembic_config() -> Config:
@@ -53,13 +49,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     update_parser = subparsers.add_parser("update-document", help="Refresh one document immediately.")
     update_parser.add_argument("document_code", help="Canonical or display document code.")
-
-    trusted_sync_parser = subparsers.add_parser(
-        "prefetch-trusted-sources",
-        help="Warm trusted-source cache for one query and one or more allowlisted domains.",
-    )
-    trusted_sync_parser.add_argument("query_text", help="Query text used for trusted-source prefetch.")
-    trusted_sync_parser.add_argument("--domain", action="append", dest="domains", help="Optional allowlisted domain.")
 
     return parser
 
@@ -108,30 +97,6 @@ def main() -> None:
 
     if args.command == "update-document":
         print(json.dumps(run_document_refresh(args.document_code), ensure_ascii=False, indent=2))
-        return
-
-    if args.command == "prefetch-trusted-sources":
-        settings = get_settings()
-        allowed_domains = [item for item in (args.domains or []) if item in settings.qa.search.trusted_domains]
-        with session_scope() as session:
-            result = asyncio.run(
-                prefetch_trusted_sources(
-                    session,
-                    query_text=args.query_text,
-                    allowed_domains=allowed_domains,
-                )
-            )
-        print(
-            json.dumps(
-                {
-                    "source_count": result.source_count,
-                    "hit_count": result.hit_count,
-                    "cache_hit_count": result.cache_hit_count,
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
         return
 
     parser.print_help()

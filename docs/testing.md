@@ -1,43 +1,23 @@
-# QANorm Testing
+# Тестирование Stage 1
 
-## 1. Testing Layers
+В репозитории оставлены только тесты Stage 1:
 
-The project uses:
+- parser/crawler tests;
+- raw storage tests;
+- OCR/text extraction tests;
+- repository tests;
+- indexing tests;
+- worker/integration tests;
+- ingestion metrics tests.
 
-- unit tests;
-- integration tests;
-- smoke tests.
+Полный прогон:
 
-## 2. What the Test Suite Must Cover
+```powershell
+pytest tests/unit tests/integration -q
+```
 
-The test suite should verify:
+Если нужны только smoke-проверки ядра Stage 1, достаточно:
 
-- ingestion and retrieval logic;
-- session and query runtime;
-- answer synthesis;
-- verification behavior;
-- freshness logic;
-- web and Telegram integration;
-- observability and audit hooks.
-
-## 3. Acceptance Checks
-
-Before release, the system should pass:
-
-- retrieval smoke;
-- answer flow smoke;
-- freshness smoke;
-- web UI smoke;
-- Telegram smoke;
-- observability smoke.
-
-## 4. Purpose of the Test System
-
-The test system must confirm that:
-
-- the regulatory database is available;
-- retrieval returns correct citations;
-- answers are built only from supported evidence;
-- external sources are labeled correctly;
-- session isolation and audit behavior work as intended.
-
+```powershell
+pytest tests/unit/test_settings_smoke.py tests/unit/test_indexer.py tests/integration/test_stage_w_integration.py -q
+```

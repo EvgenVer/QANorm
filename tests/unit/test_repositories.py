@@ -4,58 +4,17 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock
 from uuid import uuid4
 
-from qanorm.db.types import ArtifactType, JobStatus, QueryStatus, SessionChannel, SessionStatus
-from qanorm.models import (
-    AuditEvent,
-    ChunkEmbedding,
-    Document,
-    DocumentNode,
-    DocumentSource,
-    DocumentVersion,
-    FreshnessCheck,
-    IngestionJob,
-    QAAnswer,
-    QAEvidence,
-    QAMessage,
-    QAQuery,
-    QASession,
-    QASubtask,
-    RawArtifact,
-    RetrievalChunk,
-    SearchEvent,
-    SecurityEvent,
-    ToolInvocation,
-    TrustedSourceCacheEntry,
-    TrustedSourceChunk,
-    TrustedSourceDocument,
-    TrustedSourceSyncRun,
-    UpdateEvent,
-    VerificationReport,
-)
+from qanorm.db.types import ArtifactType, JobStatus
+from qanorm.models import Document, DocumentNode, DocumentSource, DocumentVersion, IngestionJob, RawArtifact, UpdateEvent
 from qanorm.repositories import (
-    AuditEventRepository,
-    ChunkEmbeddingRepository,
     DocumentNodeRepository,
+    DocumentReferenceRepository,
     DocumentRepository,
-    DocumentVersionRepository,
     DocumentSourceRepository,
-    FreshnessCheckRepository,
+    DocumentVersionRepository,
     IngestionJobRepository,
-    QAAnswerRepository,
-    QAEvidenceRepository,
-    QAMessageRepository,
-    QAQueryRepository,
-    QASessionRepository,
-    QASubtaskRepository,
     RawArtifactRepository,
-    RetrievalChunkRepository,
-    SearchEventRepository,
-    SecurityEventRepository,
-    ToolInvocationRepository,
-    TrustedSourceCacheEntryRepository,
-    TrustedSourceRepository,
     UpdateEventRepository,
-    VerificationReportRepository,
 )
 
 
@@ -117,6 +76,16 @@ def test_document_node_repository_list_for_document_version_uses_ordered_query()
 
     assert result == expected_nodes
     session.execute.assert_called_once()
+
+
+def test_document_reference_repository_add_many_flushes_session() -> None:
+    session = _mock_session()
+    repository = DocumentReferenceRepository(session)
+    references = []
+
+    assert repository.add_many(references) == []
+    session.add_all.assert_called_once_with(references)
+    session.flush.assert_called_once()
 
 
 def test_ingestion_job_repository_claim_next_ready_job_marks_job_running() -> None:
@@ -196,299 +165,3 @@ def test_update_event_repository_lists_events_for_document() -> None:
 
     assert result == expected
     session.execute.assert_called_once()
-
-
-def test_qa_session_repository_get_by_channel_identifiers_uses_scalar_lookup() -> None:
-    session = _mock_session()
-    expected = QASession(channel=SessionChannel.WEB, status=SessionStatus.ACTIVE)
-    session.execute.return_value.scalar_one_or_none.return_value = expected
-
-    repository = QASessionRepository(session)
-    result = repository.get_by_channel_identifiers(SessionChannel.WEB, external_user_id="user-1")
-
-    assert result is expected
-    session.execute.assert_called_once()
-
-
-def test_qa_session_repository_update_session_state_flushes_changes() -> None:
-    session = _mock_session()
-    qa_session = QASession(channel=SessionChannel.WEB, status=SessionStatus.ACTIVE)
-
-    repository = QASessionRepository(session)
-    repository.update_session_state(
-        qa_session,
-        status=SessionStatus.CLOSED,
-        session_summary="summary",
-    )
-
-    assert qa_session.status == SessionStatus.CLOSED
-    assert qa_session.session_summary == "summary"
-    session.flush.assert_called_once()
-
-
-def test_qa_message_repository_lists_session_history_in_order() -> None:
-    session = _mock_session()
-    session_id = uuid4()
-    expected = [QAMessage(session_id=session_id, role="user", content="hello")]
-    session.execute.return_value.scalars.return_value.all.return_value = expected
-
-    repository = QAMessageRepository(session)
-    result = repository.list_for_session(session_id)
-
-    assert result == expected
-    session.execute.assert_called_once()
-
-
-def test_qa_query_repository_update_state_updates_flags() -> None:
-    session = _mock_session()
-    query = QAQuery(session_id=uuid4(), message_id=uuid4(), query_text="test", status=QueryStatus.PENDING)
-
-    repository = QAQueryRepository(session)
-    repository.update_state(
-        query,
-        status=QueryStatus.COMPLETED,
-        intent="clarify",
-        clarification_required=True,
-        document_hints=["СП 63"],
-        locator_hints=["п. 8.3"],
-        retrieval_mode="clarify",
-        document_resolution={"status": "resolved"},
-        used_open_web=True,
-        used_trusted_web=True,
-        requires_freshness_check=True,
-    )
-
-    assert query.status == QueryStatus.COMPLETED
-    assert query.intent == "clarify"
-    assert query.clarification_required is True
-    assert query.document_hints == ["СП 63"]
-    assert query.locator_hints == ["п. 8.3"]
-    assert query.retrieval_mode == "clarify"
-    assert query.document_resolution == {"status": "resolved"}
-    assert query.used_open_web is True
-    assert query.used_trusted_web is True
-    assert query.requires_freshness_check is True
-    session.flush.assert_called_once()
-
-
-def test_qa_subtask_repository_lists_subtasks_for_query() -> None:
-    session = _mock_session()
-    query_id = uuid4()
-    expected = [QASubtask(query_id=query_id, subtask_type="normative", description="find")]
-    session.execute.return_value.scalars.return_value.all.return_value = expected
-
-    repository = QASubtaskRepository(session)
-    result = repository.list_for_query(query_id)
-
-    assert result == expected
-    session.execute.assert_called_once()
-
-
-def test_qa_evidence_repository_add_many_flushes_session() -> None:
-    session = _mock_session()
-    evidence = [QAEvidence(query_id=uuid4(), source_kind="normative")]
-
-    repository = QAEvidenceRepository(session)
-    result = repository.add_many(evidence)
-
-    assert result == evidence
-    session.add_all.assert_called_once_with(evidence)
-    session.flush.assert_called_once()
-
-
-def test_qa_evidence_repository_add_flushes_session() -> None:
-    session = _mock_session()
-    evidence = QAEvidence(query_id=uuid4(), source_kind="normative")
-
-    repository = QAEvidenceRepository(session)
-    result = repository.add(evidence)
-
-    assert result is evidence
-    session.add.assert_called_once_with(evidence)
-    session.flush.assert_called_once()
-
-
-def test_qa_answer_repository_get_by_query_uses_scalar_lookup() -> None:
-    session = _mock_session()
-    query_id = uuid4()
-    expected = QAAnswer(query_id=query_id, answer_text="answer", answer_format="markdown")
-    session.execute.return_value.scalar_one_or_none.return_value = expected
-
-    repository = QAAnswerRepository(session)
-    result = repository.get_by_query(query_id)
-
-    assert result is expected
-    session.execute.assert_called_once()
-
-
-def test_supporting_stage2_repositories_flush_added_rows() -> None:
-    session = _mock_session()
-    query_id = uuid4()
-    session_id = uuid4()
-    subtask_id = uuid4()
-
-    verification_report = VerificationReport(
-        query_id=query_id,
-        coverage_result="pass",
-        citation_result="pass",
-        hallucination_result="pass",
-        source_labeling_result="pass",
-    )
-    freshness_check = FreshnessCheck(query_id=query_id, document_id=uuid4())
-    security_event = SecurityEvent(session_id=session_id, event_type="prompt_injection")
-    audit_event = AuditEvent(session_id=session_id, event_type="query_started", actor_kind="system")
-    search_event = SearchEvent(provider_name="searxng", search_scope="open_web", query_text="test")
-    tool_invocation = ToolInvocation(query_id=query_id, subtask_id=subtask_id, tool_name="search", tool_scope="web")
-    retrieval_chunk = RetrievalChunk(
-        document_id=uuid4(),
-        document_version_id=uuid4(),
-        start_node_id=uuid4(),
-        end_node_id=uuid4(),
-        chunk_index=1,
-        chunk_type="point",
-        chunk_text="Chunk text",
-        chunk_hash="1" * 64,
-        char_count=10,
-        token_count=2,
-    )
-    chunk_embedding = ChunkEmbedding(
-        chunk_hash="1" * 64,
-        model_provider="ollama",
-        model_name="bge-m3",
-        model_revision="",
-        dimensions=1024,
-        embedding=[0.1, 0.2],
-    )
-
-    assert VerificationReportRepository(session).add(verification_report) is verification_report
-    assert FreshnessCheckRepository(session).add(freshness_check) is freshness_check
-    assert SecurityEventRepository(session).add(security_event) is security_event
-    assert AuditEventRepository(session).add(audit_event) is audit_event
-    assert SearchEventRepository(session).add(search_event) is search_event
-    assert ToolInvocationRepository(session).add(tool_invocation) is tool_invocation
-    assert RetrievalChunkRepository(session).add_many([retrieval_chunk]) == [retrieval_chunk]
-    assert ChunkEmbeddingRepository(session).add_many([chunk_embedding]) == [chunk_embedding]
-    assert session.add.call_count == 6
-    assert session.add_all.call_count == 2
-    assert session.flush.call_count == 8
-
-
-def test_retrieval_chunk_repository_delete_for_document_version_flushes() -> None:
-    session = _mock_session()
-    document_version_id = uuid4()
-
-    repository = RetrievalChunkRepository(session)
-    repository.delete_for_document_version(document_version_id)
-
-    session.execute.assert_called_once()
-    session.flush.assert_called_once()
-
-
-def test_chunk_embedding_repository_list_for_hashes_uses_scalar_query() -> None:
-    session = _mock_session()
-    expected = [
-        ChunkEmbedding(
-            chunk_hash="1" * 64,
-            model_provider="ollama",
-            model_name="bge-m3",
-            model_revision="",
-            dimensions=1024,
-            embedding=[0.1, 0.2],
-        )
-    ]
-    session.execute.return_value.scalars.return_value.all.return_value = expected
-
-    repository = ChunkEmbeddingRepository(session)
-    result = repository.list_for_hashes(["1" * 64], model_provider="ollama", model_name="bge-m3")
-
-    assert result == expected
-    session.execute.assert_called_once()
-
-
-def test_freshness_check_repository_lists_results_for_query() -> None:
-    session = _mock_session()
-    query_id = uuid4()
-    expected = [FreshnessCheck(query_id=query_id, document_id=uuid4())]
-    session.execute.return_value.scalars.return_value.all.return_value = expected
-
-    repository = FreshnessCheckRepository(session)
-    result = repository.list_for_query(query_id)
-
-    assert result == expected
-    session.execute.assert_called_once()
-
-
-def test_trusted_source_cache_entry_repository_upsert_inserts_new_entry() -> None:
-    session = _mock_session()
-    session.execute.return_value.scalar_one_or_none.return_value = None
-
-    repository = TrustedSourceCacheEntryRepository(session)
-    result = repository.upsert(
-        cache_kind="page",
-        source_id="example_com",
-        source_domain="example.com",
-        cache_key="key",
-        payload_json={"url": "https://example.com/doc"},
-        expires_at=datetime.now(timezone.utc),
-    )
-
-    assert isinstance(result, TrustedSourceCacheEntry)
-    session.add.assert_called_once()
-    session.flush.assert_called_once()
-
-
-def test_trusted_source_cache_entry_repository_delete_expired_flushes() -> None:
-    session = _mock_session()
-    session.execute.return_value.rowcount = 2
-
-    repository = TrustedSourceCacheEntryRepository(session)
-    deleted = repository.delete_expired(now=datetime.now(timezone.utc))
-
-    assert deleted == 2
-    session.flush.assert_called_once()
-
-
-def test_trusted_source_repository_save_document_updates_existing_row() -> None:
-    session = _mock_session()
-    existing = TrustedSourceDocument(source_domain="example.com", source_url="https://example.com/doc")
-    session.execute.return_value.scalar_one_or_none.return_value = existing
-    updated = TrustedSourceDocument(
-        source_domain="example.com",
-        source_url="https://example.com/doc",
-        title="Updated",
-        content_hash="1" * 64,
-    )
-
-    repository = TrustedSourceRepository(session)
-    result = repository.save_document(updated)
-
-    assert result is existing
-    assert existing.title == "Updated"
-    assert existing.content_hash == "1" * 64
-    session.flush.assert_called_once()
-
-
-def test_trusted_source_repository_replace_chunks_replaces_document_chunks() -> None:
-    session = _mock_session()
-    document_id = uuid4()
-    chunks = [TrustedSourceChunk(document_id=document_id, chunk_index=0, text="chunk")]
-
-    repository = TrustedSourceRepository(session)
-    result = repository.replace_chunks(document_id, chunks)
-
-    assert result == chunks
-    session.execute.assert_called_once()
-    session.add_all.assert_called_once_with(chunks)
-    session.flush.assert_called_once()
-
-
-def test_trusted_source_repository_save_sync_run_flushes() -> None:
-    session = _mock_session()
-    sync_run = TrustedSourceSyncRun(source_domain="example.com")
-
-    repository = TrustedSourceRepository(session)
-    result = repository.save_sync_run(sync_run)
-
-    assert result is sync_run
-    session.add.assert_called_once_with(sync_run)
-    session.flush.assert_called_once()

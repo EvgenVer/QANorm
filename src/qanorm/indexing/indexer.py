@@ -201,9 +201,9 @@ def _clear_version_index(nodes: list[DocumentNode]) -> int:
 
 
 def _clear_node_embeddings(nodes: list[DocumentNode]) -> None:
-    """Drop transitional node-level embeddings after refreshing the text index."""
+    """Drop stale node-level embeddings after refreshing the text index."""
 
-    # Stage 2 retrieval moves dense vectors to chunk-level storage, so node-level
-    # placeholder embeddings must not be materialized again during reindex.
+    # Reindex starts from fresh lexical state; dense vectors can be regenerated
+    # separately when needed for Stage 1 search experiments.
     for node in nodes:
         node.embedding = None

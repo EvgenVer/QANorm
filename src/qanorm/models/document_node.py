@@ -8,6 +8,22 @@ from datetime import datetime
 from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+try:
+    from pgvector.sqlalchemy import Vector
+except ModuleNotFoundError:  # pragma: no cover - imported by migrations/tests without pgvector installed
+    from sqlalchemy.types import UserDefinedType
+
+    class Vector(UserDefinedType):
+        """Fallback VECTOR type used in environments without pgvector bindings."""
+
+        cache_ok = True
+
+        def __init__(self, dimensions: int) -> None:
+            self.dimensions = dimensions
+
+        def get_col_spec(self, **_: object) -> str:
+            return f"VECTOR({self.dimensions})"
 from qanorm.db.base import Base
 
 
@@ -19,6 +35,7 @@ class DocumentNode(Base):
         Index("ix_document_nodes_document_version_id", "document_version_id"),
         Index("ix_document_nodes_parent_node_id", "parent_node_id"),
         Index("ix_document_nodes_text_tsv", "text_tsv", postgresql_using="gin"),
+        Index("ix_document_nodes_embedding", "embedding", postgresql_using="hnsw", postgresql_ops={"embedding": "vector_cosine_ops"}),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -29,6 +46,7 @@ class DocumentNode(Base):
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     text_tsv: Mapped[str | None] = mapped_column(TSVECTOR, nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
     order_index: Mapped[int] = mapped_column(Integer, nullable=False)
     page_from: Mapped[int | None] = mapped_column(Integer, nullable=True)
     page_to: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -80,31 +80,19 @@ if CollectorRegistry is not None:
     REGISTRY = CollectorRegistry()
     QUERY_LATENCY = Histogram(
         "qanorm_query_stage_seconds",
-        "Observed stage durations for Stage 2 queries.",
+        "Observed durations for tracked QANorm operations.",
         ("metric",),
         registry=REGISTRY,
     )
     EVENT_COUNTER = Counter(
         "qanorm_events_total",
-        "Count of tracked Stage 2 runtime events.",
+        "Count of tracked QANorm runtime events.",
         ("kind", "status"),
         registry=REGISTRY,
     )
     BACKFILL_GAUGE = Gauge(
         "qanorm_dense_backfill_progress",
-        "Dense embedding backfill progress for retrieval chunks.",
-        ("metric",),
-        registry=REGISTRY,
-    )
-    RETRIEVAL_GAUGE = Gauge(
-        "qanorm_retrieval_metrics",
-        "Retrieval metrics, including estimate deltas and chunk coverage.",
-        ("metric",),
-        registry=REGISTRY,
-    )
-    VERIFICATION_GAUGE = Gauge(
-        "qanorm_verification_metrics",
-        "Verification and freshness quality metrics.",
+        "Backfill progress for index-related background work.",
         ("metric",),
         registry=REGISTRY,
     )
@@ -113,8 +101,6 @@ else:  # pragma: no cover - exercised indirectly through export_metrics
     QUERY_LATENCY = None
     EVENT_COUNTER = None
     BACKFILL_GAUGE = None
-    RETRIEVAL_GAUGE = None
-    VERIFICATION_GAUGE = None
 
 
 def observe_query_latency(metric: str, value_seconds: float) -> None:
@@ -142,24 +128,6 @@ def set_backfill_metric(metric: str, value: float) -> None:
         BACKFILL_GAUGE.labels(metric=metric).set(value)
     else:
         REGISTRY.set("qanorm_dense_backfill_progress", value, metric=metric)
-
-
-def set_retrieval_metric(metric: str, value: float) -> None:
-    """Expose one retrieval quality or coverage gauge."""
-
-    if RETRIEVAL_GAUGE is not None:
-        RETRIEVAL_GAUGE.labels(metric=metric).set(value)
-    else:
-        REGISTRY.set("qanorm_retrieval_metrics", value, metric=metric)
-
-
-def set_verification_metric(metric: str, value: float) -> None:
-    """Expose one verification or freshness gauge."""
-
-    if VERIFICATION_GAUGE is not None:
-        VERIFICATION_GAUGE.labels(metric=metric).set(value)
-    else:
-        REGISTRY.set("qanorm_verification_metrics", value, metric=metric)
 
 
 def export_metrics() -> tuple[bytes, str]:
