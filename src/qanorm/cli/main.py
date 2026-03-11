@@ -26,6 +26,7 @@ from qanorm.stage2a.indexing.backfill import (
     run_rebuild_derived_retrieval_data,
     run_retrieval_unit_backfill,
     start_derived_backfill_process,
+    start_parallel_derived_backfill_processes,
     start_embedding_backfill_process,
 )
 
@@ -82,6 +83,8 @@ def build_parser() -> argparse.ArgumentParser:
     stage2a_derived_start_parser.add_argument("--document-code", help="Optional canonical document code.", default=None)
     stage2a_derived_start_parser.add_argument("--state-path", default=None, help="Optional path to the checkpoint state JSON.")
     stage2a_derived_start_parser.add_argument("--log-path", default=None, help="Optional path to the derived rebuild log file.")
+    stage2a_derived_start_parser.add_argument("--parallel-workers", type=int, default=1, help="Optional number of shard workers.")
+    stage2a_derived_start_parser.add_argument("--manifest-path", default=None, help="Optional path to the parallel manifest JSON.")
 
     stage2a_derived_status_parser = subparsers.add_parser(
         "stage2a-derived-status",
@@ -89,6 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     stage2a_derived_status_parser.add_argument("--state-path", default=None, help="Optional path to the checkpoint state JSON.")
     stage2a_derived_status_parser.add_argument("--log-path", default=None, help="Optional path to the derived rebuild log file.")
+    stage2a_derived_status_parser.add_argument("--manifest-path", default=None, help="Optional path to the parallel manifest JSON.")
 
     stage2a_derived_worker_parser = subparsers.add_parser(
         "stage2a-derived-backfill-worker",
@@ -97,6 +101,8 @@ def build_parser() -> argparse.ArgumentParser:
     stage2a_derived_worker_parser.add_argument("--document-code", default=None)
     stage2a_derived_worker_parser.add_argument("--state-path", required=True)
     stage2a_derived_worker_parser.add_argument("--log-path", required=True)
+    stage2a_derived_worker_parser.add_argument("--shard-index", type=int, default=0)
+    stage2a_derived_worker_parser.add_argument("--shard-count", type=int, default=1)
 
     stage2a_preflight_parser = subparsers.add_parser(
         "stage2a-embed-preflight",
@@ -192,6 +198,23 @@ def main() -> None:
         return
 
     if args.command == "stage2a-derived-start":
+        if args.parallel_workers > 1:
+            print(
+                json.dumps(
+                    asdict(
+                        start_parallel_derived_backfill_processes(
+                            worker_count=args.parallel_workers,
+                            document_code=args.document_code,
+                            state_path=args.state_path,
+                            log_path=args.log_path,
+                            manifest_path=args.manifest_path,
+                        )
+                    ),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return
         print(
             json.dumps(
                 start_derived_backfill_process(
@@ -206,7 +229,17 @@ def main() -> None:
         return
 
     if args.command == "stage2a-derived-status":
-        print(json.dumps(read_derived_backfill_state(state_path=args.state_path, log_path=args.log_path), ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                read_derived_backfill_state(
+                    state_path=args.state_path,
+                    log_path=args.log_path,
+                    manifest_path=args.manifest_path,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     if args.command == "stage2a-derived-backfill-worker":
@@ -217,6 +250,8 @@ def main() -> None:
                         document_code=args.document_code,
                         state_path=args.state_path,
                         log_path=args.log_path,
+                        shard_index=args.shard_index,
+                        shard_count=args.shard_count,
                     )
                 ),
                 ensure_ascii=False,

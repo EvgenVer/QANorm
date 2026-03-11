@@ -104,6 +104,16 @@ class DerivedBackfillResult:
     log_path: str
 
 
+@dataclass(slots=True)
+class ParallelDerivedBackfillResult:
+    """Summary of a sharded detached derived-data rebuild."""
+
+    status: str
+    worker_count: int
+    manifest_path: str
+    workers: list[dict[str, Any]]
+
+
 class GeminiEmbeddingClient:
     """Thin Gemini embeddings client over raw HTTP."""
 
@@ -479,6 +489,8 @@ def backfill_derived_retrieval_data_worker(
     document_code: str | None = None,
     state_path: str | Path | None = None,
     log_path: str | Path | None = None,
+    shard_index: int = 0,
+    shard_count: int = 1,
 ) -> DerivedBackfillResult:
     """Run or resume derived retrieval-data rebuild in the current process."""
 
@@ -486,11 +498,22 @@ def backfill_derived_retrieval_data_worker(
     logger = _build_backfill_logger(resolved_log_path, logger_name="derived_backfill")
     start_time = datetime.now(UTC)
     state = _read_state_file(resolved_state_path)
-    target_codes = _list_target_document_codes(document_code=document_code)
-    same_target = state.get("document_code") == document_code
+    shard_index, shard_count = _normalize_shard_params(shard_index=shard_index, shard_count=shard_count)
+    all_target_codes = _list_target_document_codes(document_code=document_code)
+    target_codes = _slice_codes_for_shard(all_target_codes, shard_index=shard_index, shard_count=shard_count)
+    same_target = (
+        state.get("document_code") == document_code
+        and int(state.get("shard_index", 0)) == shard_index
+        and int(state.get("shard_count", 1)) == shard_count
+    )
     processed_codes = set(state.get("processed_document_codes") or []) if same_target else set()
     processed_documents = int(state.get("processed_documents", 0)) if same_target else 0
-    logger.info("Starting derived retrieval-data rebuild; target_documents=%s", len(target_codes))
+    logger.info(
+        "Starting derived retrieval-data rebuild; target_documents=%s shard=%s/%s",
+        len(target_codes),
+        shard_index + 1,
+        shard_count,
+    )
     _write_state_file(
         resolved_state_path,
         {
@@ -498,6 +521,8 @@ def backfill_derived_retrieval_data_worker(
             "status": "running",
             "pid": os.getpid(),
             "document_code": document_code,
+            "shard_index": shard_index,
+            "shard_count": shard_count,
             "target_documents": len(target_codes),
             "processed_documents": processed_documents,
             "processed_document_codes": sorted(processed_codes),
@@ -537,6 +562,8 @@ def backfill_derived_retrieval_data_worker(
                     "status": "running",
                     "pid": os.getpid(),
                     "document_code": document_code,
+                    "shard_index": shard_index,
+                    "shard_count": shard_count,
                     "target_documents": len(target_codes),
                     "processed_documents": processed_documents,
                     "remaining_documents": remaining_documents,
@@ -566,6 +593,8 @@ def backfill_derived_retrieval_data_worker(
                 "status": "failed",
                 "pid": os.getpid(),
                 "document_code": document_code,
+                "shard_index": shard_index,
+                "shard_count": shard_count,
                 "target_documents": len(target_codes),
                 "processed_documents": processed_documents,
                 "remaining_documents": remaining_documents,
@@ -584,6 +613,8 @@ def backfill_derived_retrieval_data_worker(
             "status": final_status,
             "pid": os.getpid(),
             "document_code": document_code,
+            "shard_index": shard_index,
+            "shard_count": shard_count,
             "target_documents": len(target_codes),
             "processed_documents": processed_documents,
             "remaining_documents": remaining_documents,
@@ -607,10 +638,14 @@ def start_derived_backfill_process(
     document_code: str | None = None,
     state_path: str | Path | None = None,
     log_path: str | Path | None = None,
+    shard_index: int = 0,
+    shard_count: int = 1,
 ) -> dict[str, Any]:
     """Spawn a detached resumable worker for derived retrieval-data rebuild."""
 
     resolved_state_path, resolved_log_path = _resolve_derived_paths(state_path=state_path, log_path=log_path)
+    shard_index, shard_count = _normalize_shard_params(shard_index=shard_index, shard_count=shard_count)
+    existing_state = _read_state_file(resolved_state_path)
     command = [
         sys.executable,
         "-m",
@@ -620,6 +655,10 @@ def start_derived_backfill_process(
         str(resolved_state_path),
         "--log-path",
         str(resolved_log_path),
+        "--shard-index",
+        str(shard_index),
+        "--shard-count",
+        str(shard_count),
     ]
     if document_code is not None:
         command.extend(["--document-code", document_code])
@@ -642,9 +681,12 @@ def start_derived_backfill_process(
     _write_state_file(
         resolved_state_path,
         {
+            **existing_state,
             "status": "queued",
             "pid": process.pid,
             "document_code": document_code,
+            "shard_index": shard_index,
+            "shard_count": shard_count,
             "command": command,
             "created_at": datetime.now(UTC).isoformat(),
             "updated_at": datetime.now(UTC).isoformat(),
@@ -659,8 +701,101 @@ def start_derived_backfill_process(
     }
 
 
-def read_derived_backfill_state(*, state_path: str | Path | None = None, log_path: str | Path | None = None) -> dict[str, Any]:
+def start_parallel_derived_backfill_processes(
+    *,
+    worker_count: int,
+    document_code: str | None = None,
+    state_path: str | Path | None = None,
+    log_path: str | Path | None = None,
+    manifest_path: str | Path | None = None,
+    seed_state_path: str | Path | None = None,
+) -> ParallelDerivedBackfillResult:
+    """Spawn multiple shard workers for faster derived-data rebuild."""
+
+    if worker_count < 2:
+        raise ValueError("worker_count must be at least 2 for parallel derived backfill")
+
+    base_state_path, base_log_path = _resolve_derived_paths(state_path=state_path, log_path=log_path)
+    resolved_manifest_path = _resolve_manifest_path(manifest_path)
+    seed_state = _read_state_file(Path(seed_state_path)) if seed_state_path is not None else _read_state_file(base_state_path)
+    all_target_codes = _list_target_document_codes(document_code=document_code)
+    workers: list[dict[str, Any]] = []
+
+    for shard_index in range(worker_count):
+        shard_state_path = _derive_shard_path(base_state_path, shard_index=shard_index, shard_count=worker_count)
+        shard_log_path = _derive_shard_path(base_log_path, shard_index=shard_index, shard_count=worker_count)
+        shard_target_codes = _slice_codes_for_shard(all_target_codes, shard_index=shard_index, shard_count=worker_count)
+        processed_codes = _filter_processed_codes_for_shard(
+            seed_state.get("processed_document_codes") or [],
+            shard_target_codes=shard_target_codes,
+        )
+        _write_state_file(
+            shard_state_path,
+            {
+                "status": "queued",
+                "document_code": document_code,
+                "shard_index": shard_index,
+                "shard_count": worker_count,
+                "target_documents": len(shard_target_codes),
+                "processed_documents": len(processed_codes),
+                "remaining_documents": max(0, len(shard_target_codes) - len(processed_codes)),
+                "processed_document_codes": processed_codes,
+                "created_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
+                "log_path": str(shard_log_path),
+            },
+        )
+        started = start_derived_backfill_process(
+            document_code=document_code,
+            state_path=shard_state_path,
+            log_path=shard_log_path,
+            shard_index=shard_index,
+            shard_count=worker_count,
+        )
+        workers.append(
+            {
+                **started,
+                "shard_index": shard_index,
+                "shard_count": worker_count,
+                "target_documents": len(shard_target_codes),
+            }
+        )
+
+    manifest_payload = {
+        "status": "running",
+        "document_code": document_code,
+        "worker_count": worker_count,
+        "manifest_path": str(resolved_manifest_path),
+        "workers": workers,
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+    _write_state_file(resolved_manifest_path, manifest_payload)
+    return ParallelDerivedBackfillResult(
+        status="started",
+        worker_count=worker_count,
+        manifest_path=str(resolved_manifest_path),
+        workers=workers,
+    )
+
+
+def read_derived_backfill_state(
+    *,
+    state_path: str | Path | None = None,
+    log_path: str | Path | None = None,
+    manifest_path: str | Path | None = None,
+) -> dict[str, Any]:
     """Read the persisted state of the derived retrieval-data worker."""
+
+    if state_path is None:
+        resolved_manifest_path = _resolve_manifest_path(manifest_path)
+        manifest = _read_state_file(resolved_manifest_path)
+        if manifest.get("workers"):
+            worker_states: list[dict[str, Any]] = []
+            for worker in manifest["workers"]:
+                worker_state = _read_state_file(Path(worker["state_path"]))
+                worker_states.append(worker_state or worker)
+            return _aggregate_parallel_derived_states(manifest, worker_states)
 
     resolved_state_path, _ = _resolve_derived_paths(state_path=state_path, log_path=log_path)
     return _read_state_file(resolved_state_path)
@@ -728,6 +863,13 @@ def _resolve_derived_paths(
     )
 
 
+def _resolve_manifest_path(manifest_path: str | Path | None) -> Path:
+    base_dir = get_settings().env.raw_storage_path.parent / "stage2a"
+    resolved_path = Path(manifest_path) if manifest_path is not None else base_dir / "derived_backfill_manifest.json"
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    return resolved_path
+
+
 def _resolve_backfill_paths(
     *,
     default_state_name: str,
@@ -762,6 +904,59 @@ def _read_state_file(path: Path) -> dict[str, Any]:
 
 def _write_state_file(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _normalize_shard_params(*, shard_index: int, shard_count: int) -> tuple[int, int]:
+    if shard_count < 1:
+        raise ValueError("shard_count must be at least 1")
+    if shard_index < 0 or shard_index >= shard_count:
+        raise ValueError("shard_index must be within [0, shard_count)")
+    return shard_index, shard_count
+
+
+def _slice_codes_for_shard(codes: list[str | None], *, shard_index: int, shard_count: int) -> list[str | None]:
+    if shard_count == 1:
+        return list(codes)
+    return [code for index, code in enumerate(codes) if index % shard_count == shard_index]
+
+
+def _derive_shard_path(path: Path, *, shard_index: int, shard_count: int) -> Path:
+    suffix = f".shard-{shard_index + 1:02d}-of-{shard_count:02d}"
+    return path.with_name(f"{path.stem}{suffix}{path.suffix}")
+
+
+def _filter_processed_codes_for_shard(processed_codes: list[str], *, shard_target_codes: list[str | None]) -> list[str]:
+    shard_set = {code for code in shard_target_codes if code is not None}
+    return sorted(code for code in processed_codes if code in shard_set)
+
+
+def _aggregate_parallel_derived_states(manifest: dict[str, Any], worker_states: list[dict[str, Any]]) -> dict[str, Any]:
+    statuses = [state.get("status", "unknown") for state in worker_states]
+    if any(status == "failed" for status in statuses):
+        aggregate_status = "failed"
+    elif any(status in {"running", "queued"} for status in statuses):
+        aggregate_status = "running"
+    elif worker_states and all(status == "completed" for status in statuses):
+        aggregate_status = "completed"
+    else:
+        aggregate_status = "unknown"
+
+    processed_documents = sum(int(state.get("processed_documents", 0)) for state in worker_states)
+    remaining_documents = sum(int(state.get("remaining_documents", 0)) for state in worker_states)
+    target_documents = sum(int(state.get("target_documents", 0)) for state in worker_states)
+
+    return {
+        "status": aggregate_status,
+        "document_code": manifest.get("document_code"),
+        "worker_count": manifest.get("worker_count", len(worker_states)),
+        "manifest_path": manifest.get("manifest_path"),
+        "created_at": manifest.get("created_at"),
+        "updated_at": datetime.now(UTC).isoformat(),
+        "target_documents": target_documents,
+        "processed_documents": processed_documents,
+        "remaining_documents": remaining_documents,
+        "workers": worker_states,
+    }
 
 
 def run_rebuild_derived_retrieval_data(*, document_code: str | None = None) -> dict[str, Any]:

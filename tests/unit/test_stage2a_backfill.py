@@ -18,6 +18,8 @@ from qanorm.stage2a.indexing.backfill import (
     RetrievalUnitBackfillResult,
     backfill_derived_retrieval_data_worker,
     build_embedding_preflight_report,
+    read_derived_backfill_state,
+    start_parallel_derived_backfill_processes,
     start_derived_backfill_process,
     start_embedding_backfill_process,
 )
@@ -275,3 +277,80 @@ def test_backfill_derived_retrieval_data_worker_resumes_from_checkpoint(tmp_path
     payload = json.loads(state_path.read_text(encoding="utf-8"))
     assert payload["processed_documents"] == 3
     assert payload["processed_document_codes"] == ["doc-a", "doc-b", "doc-c"]
+
+
+def test_start_parallel_derived_backfill_processes_seeds_shard_states(tmp_path: Path) -> None:
+    state_path = tmp_path / "derived-state.json"
+    log_path = tmp_path / "derived.log"
+    manifest_path = tmp_path / "derived-manifest.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "status": "running",
+                "document_code": None,
+                "processed_document_codes": ["doc-a", "doc-c"],
+                "processed_documents": 2,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    process_ids = iter([1111, 2222])
+
+    with patch("qanorm.stage2a.indexing.backfill._list_target_document_codes", return_value=["doc-a", "doc-b", "doc-c", "doc-d"]):
+        with patch("qanorm.stage2a.indexing.backfill.subprocess.Popen", side_effect=lambda *args, **kwargs: SimpleNamespace(pid=next(process_ids))):
+            result = start_parallel_derived_backfill_processes(
+                worker_count=2,
+                state_path=state_path,
+                log_path=log_path,
+                manifest_path=manifest_path,
+            )
+
+    assert result.status == "started"
+    assert manifest_path.exists()
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["worker_count"] == 2
+    assert len(manifest["workers"]) == 2
+    shard_one = json.loads((tmp_path / "derived-state.shard-01-of-02.json").read_text(encoding="utf-8"))
+    shard_two = json.loads((tmp_path / "derived-state.shard-02-of-02.json").read_text(encoding="utf-8"))
+    assert shard_one["processed_document_codes"] == ["doc-a", "doc-c"]
+    assert shard_two["processed_document_codes"] == []
+
+
+def test_read_derived_backfill_state_aggregates_parallel_manifest(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "derived-manifest.json"
+    shard_one_state_path = tmp_path / "derived-state.shard-01-of-02.json"
+    shard_two_state_path = tmp_path / "derived-state.shard-02-of-02.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "status": "running",
+                "worker_count": 2,
+                "manifest_path": str(manifest_path),
+                "workers": [
+                    {"state_path": str(shard_one_state_path)},
+                    {"state_path": str(shard_two_state_path)},
+                ],
+                "created_at": "2026-03-11T14:00:00+00:00",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    shard_one_state_path.write_text(
+        json.dumps({"status": "running", "target_documents": 10, "processed_documents": 4, "remaining_documents": 6}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    shard_two_state_path.write_text(
+        json.dumps({"status": "completed", "target_documents": 8, "processed_documents": 8, "remaining_documents": 0}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    aggregated = read_derived_backfill_state(manifest_path=manifest_path)
+
+    assert aggregated["status"] == "running"
+    assert aggregated["worker_count"] == 2
+    assert aggregated["target_documents"] == 18
+    assert aggregated["processed_documents"] == 12
+    assert aggregated["remaining_documents"] == 6
