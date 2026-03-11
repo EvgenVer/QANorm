@@ -44,7 +44,7 @@ stage2a:
     semantic_block_max_chars: 1800
     semantic_block_max_nodes: 12
     document_card_max_headings: 16
-    embed_batch_size: 32
+    embed_batch_size: 48
 
   retrieval:
     discover_documents_top_k: 8

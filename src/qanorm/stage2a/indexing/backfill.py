@@ -16,6 +16,7 @@ from typing import Any
 import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from tenacity import RetryError, retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from qanorm.db.session import create_session_factory, session_scope
 from qanorm.models import Document, DocumentSource, DocumentVersion, RetrievalUnit
@@ -33,6 +34,12 @@ _DEFAULT_EMBEDDING_PRICE_BY_MODEL = {
     "gemini-embedding-001": 0.15,
     "gemini-embedding-2-preview": 0.20,
 }
+
+
+def _is_retryable_embedding_error(exc: BaseException) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in {408, 429, 500, 502, 503, 504}
+    return isinstance(exc, httpx.TransportError)
 
 
 @dataclass(slots=True)
@@ -94,6 +101,16 @@ class EmbeddingBackfillResult:
 
 
 @dataclass(slots=True)
+class ParallelEmbeddingBackfillResult:
+    """Summary of a parallel detached embedding backfill."""
+
+    status: str
+    worker_count: int
+    manifest_path: str
+    workers: list[dict[str, Any]]
+
+
+@dataclass(slots=True)
 class DerivedBackfillResult:
     """Summary of a detached derived-data backfill run."""
 
@@ -136,7 +153,7 @@ class GeminiEmbeddingClient:
         self.api_key = api_key
         self._owns_client = client is None
         self.client = client or httpx.Client(
-            base_url=base_url.rstrip("/"),
+            base_url=_normalize_gemini_api_base_url(base_url),
             timeout=timeout_seconds or 90,
             transport=transport,
             follow_redirects=True,
@@ -160,6 +177,23 @@ class GeminiEmbeddingClient:
         if not texts:
             return []
 
+        try:
+            response = self._post_embeddings(texts=texts, task_type=task_type)
+        except RetryError as exc:
+            raise exc.last_attempt.exception() from exc
+        payload = response.json()
+        embeddings = payload.get("embeddings") or []
+        if len(embeddings) != len(texts):
+            raise ValueError(f"Expected {len(texts)} embeddings, got {len(embeddings)}")
+        return [list(item["values"]) for item in embeddings]
+
+    @retry(
+        reraise=True,
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=2, min=2, max=20),
+        retry=retry_if_exception(_is_retryable_embedding_error),
+    )
+    def _post_embeddings(self, *, texts: list[str], task_type: str) -> httpx.Response:
         response = self.client.post(
             f"/v1beta/models/{self.model}:batchEmbedContents",
             headers={"x-goog-api-key": self.api_key},
@@ -176,11 +210,7 @@ class GeminiEmbeddingClient:
             },
         )
         response.raise_for_status()
-        payload = response.json()
-        embeddings = payload.get("embeddings") or []
-        if len(embeddings) != len(texts):
-            raise ValueError(f"Expected {len(texts)} embeddings, got {len(embeddings)}")
-        return [list(item["values"]) for item in embeddings]
+        return response
 
 
 def backfill_document_aliases(session: Session, *, document_code: str | None = None) -> AliasBackfillResult:
@@ -439,6 +469,7 @@ def start_embedding_backfill_process(
     """Spawn a detached resumable embedding backfill worker."""
 
     resolved_state_path, resolved_log_path = _resolve_embedding_paths(state_path=state_path, log_path=log_path)
+    existing_state = _read_state_file(resolved_state_path)
     command = [
         sys.executable,
         "-m",
@@ -468,6 +499,7 @@ def start_embedding_backfill_process(
     _write_state_file(
         resolved_state_path,
         {
+            **existing_state,
             "status": "queued",
             "pid": process.pid,
             "command": command,
@@ -482,6 +514,64 @@ def start_embedding_backfill_process(
         "state_path": str(resolved_state_path),
         "log_path": str(resolved_log_path),
     }
+
+
+def start_parallel_embedding_backfill_processes(
+    *,
+    worker_count: int,
+    state_path: str | Path | None = None,
+    log_path: str | Path | None = None,
+    manifest_path: str | Path | None = None,
+) -> ParallelEmbeddingBackfillResult:
+    """Spawn multiple detached embedding workers over the shared pending queue."""
+
+    if worker_count < 2:
+        raise ValueError("worker_count must be at least 2 for parallel embedding backfill")
+
+    base_state_path, base_log_path = _resolve_embedding_paths(state_path=state_path, log_path=log_path)
+    resolved_manifest_path = _resolve_embedding_manifest_path(manifest_path)
+    workers: list[dict[str, Any]] = []
+
+    for worker_index in range(worker_count):
+        worker_state_path = _derive_shard_path(base_state_path, shard_index=worker_index, shard_count=worker_count)
+        worker_log_path = _derive_shard_path(base_log_path, shard_index=worker_index, shard_count=worker_count)
+        _write_state_file(
+            worker_state_path,
+            {
+                "status": "queued",
+                "worker_index": worker_index,
+                "worker_count": worker_count,
+                "processed_units": 0,
+                "remaining_units": 0,
+                "created_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
+                "log_path": str(worker_log_path),
+            },
+        )
+        started = start_embedding_backfill_process(state_path=worker_state_path, log_path=worker_log_path)
+        workers.append(
+            {
+                **started,
+                "worker_index": worker_index,
+                "worker_count": worker_count,
+            }
+        )
+
+    manifest_payload = {
+        "status": "running",
+        "worker_count": worker_count,
+        "manifest_path": str(resolved_manifest_path),
+        "workers": workers,
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+    _write_state_file(resolved_manifest_path, manifest_payload)
+    return ParallelEmbeddingBackfillResult(
+        status="started",
+        worker_count=worker_count,
+        manifest_path=str(resolved_manifest_path),
+        workers=workers,
+    )
 
 
 def backfill_derived_retrieval_data_worker(
@@ -801,8 +891,23 @@ def read_derived_backfill_state(
     return _read_state_file(resolved_state_path)
 
 
-def read_embedding_backfill_state(*, state_path: str | Path | None = None, log_path: str | Path | None = None) -> dict[str, Any]:
+def read_embedding_backfill_state(
+    *,
+    state_path: str | Path | None = None,
+    log_path: str | Path | None = None,
+    manifest_path: str | Path | None = None,
+) -> dict[str, Any]:
     """Read the persisted state of the embedding backfill worker."""
+
+    if state_path is None:
+        resolved_manifest_path = _resolve_embedding_manifest_path(manifest_path)
+        manifest = _read_state_file(resolved_manifest_path)
+        if manifest.get("workers"):
+            worker_states: list[dict[str, Any]] = []
+            for worker in manifest["workers"]:
+                worker_state = _read_state_file(Path(worker["state_path"]))
+                worker_states.append(worker_state or worker)
+            return _aggregate_parallel_embedding_states(manifest, worker_states)
 
     resolved_state_path, _ = _resolve_embedding_paths(state_path=state_path, log_path=log_path)
     return _read_state_file(resolved_state_path)
@@ -837,6 +942,13 @@ def _format_bytes(size_bytes: int) -> str:
     return f"{size_bytes / (1024**3):.2f} GB"
 
 
+def _normalize_gemini_api_base_url(base_url: str) -> str:
+    normalized = base_url.rstrip("/")
+    if normalized.endswith("/v1beta"):
+        return normalized[: -len("/v1beta")]
+    return normalized
+
+
 def _resolve_embedding_paths(
     *,
     state_path: str | Path | None,
@@ -848,6 +960,13 @@ def _resolve_embedding_paths(
         state_path=state_path,
         log_path=log_path,
     )
+
+
+def _resolve_embedding_manifest_path(manifest_path: str | Path | None) -> Path:
+    base_dir = get_settings().env.raw_storage_path.parent / "stage2a"
+    resolved_path = Path(manifest_path) if manifest_path is not None else base_dir / "embedding_backfill_manifest.json"
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    return resolved_path
 
 
 def _resolve_derived_paths(
@@ -955,6 +1074,33 @@ def _aggregate_parallel_derived_states(manifest: dict[str, Any], worker_states: 
         "target_documents": target_documents,
         "processed_documents": processed_documents,
         "remaining_documents": remaining_documents,
+        "workers": worker_states,
+    }
+
+
+def _aggregate_parallel_embedding_states(manifest: dict[str, Any], worker_states: list[dict[str, Any]]) -> dict[str, Any]:
+    statuses = [state.get("status", "unknown") for state in worker_states]
+    if any(status == "failed" for status in statuses):
+        aggregate_status = "failed"
+    elif any(status in {"running", "queued"} for status in statuses):
+        aggregate_status = "running"
+    elif worker_states and all(status == "completed" for status in statuses):
+        aggregate_status = "completed"
+    else:
+        aggregate_status = "unknown"
+
+    processed_units = sum(int(state.get("processed_units", 0)) for state in worker_states)
+    remaining_values = [int(state.get("remaining_units", 0)) for state in worker_states if state.get("remaining_units") is not None]
+    remaining_units = min(remaining_values) if remaining_values else 0
+
+    return {
+        "status": aggregate_status,
+        "worker_count": manifest.get("worker_count", len(worker_states)),
+        "manifest_path": manifest.get("manifest_path"),
+        "created_at": manifest.get("created_at"),
+        "updated_at": datetime.now(UTC).isoformat(),
+        "processed_units": processed_units,
+        "remaining_units": remaining_units,
         "workers": worker_states,
     }
 

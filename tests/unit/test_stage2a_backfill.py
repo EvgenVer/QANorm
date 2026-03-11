@@ -19,6 +19,8 @@ from qanorm.stage2a.indexing.backfill import (
     backfill_derived_retrieval_data_worker,
     build_embedding_preflight_report,
     read_derived_backfill_state,
+    read_embedding_backfill_state,
+    start_parallel_embedding_backfill_processes,
     start_parallel_derived_backfill_processes,
     start_derived_backfill_process,
     start_embedding_backfill_process,
@@ -184,6 +186,23 @@ def test_gemini_embedding_client_posts_batch_request() -> None:
     assert payload["requests"][0]["content"]["parts"][0]["text"] == "alpha"
 
 
+def test_gemini_embedding_client_normalizes_versioned_base_url() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json={"embeddings": [{"values": [0.1, 0.2]}]})
+
+    with patch.dict(os.environ, {"QANORM_GEMINI_API_KEY": "test-key", "QANORM_GEMINI_API_BASE_URL": "https://unit.test/v1beta"}):
+        with GeminiEmbeddingClient(
+            model="gemini-embedding-2-preview",
+            transport=httpx.MockTransport(handler),
+        ) as client:
+            client.embed_texts(["alpha"], task_type="RETRIEVAL_DOCUMENT")
+
+    assert str(captured["url"]).endswith("/v1beta/models/gemini-embedding-2-preview:batchEmbedContents")
+
+
 def test_start_embedding_backfill_process_spawns_detached_worker_and_writes_state(tmp_path: Path) -> None:
     state_path = tmp_path / "state.json"
     log_path = tmp_path / "backfill.log"
@@ -199,6 +218,34 @@ def test_start_embedding_backfill_process_spawns_detached_worker_and_writes_stat
     assert payload["pid"] == 4321
     assert "stage2a-embed-backfill-worker" in payload["command"]
     popen_mock.assert_called_once()
+
+
+def test_start_parallel_embedding_backfill_processes_spawns_workers_and_writes_manifest(tmp_path: Path) -> None:
+    state_path = tmp_path / "embed-state.json"
+    log_path = tmp_path / "embed.log"
+    manifest_path = tmp_path / "embed-manifest.json"
+    process_ids = iter([4321, 4322])
+
+    with patch("qanorm.stage2a.indexing.backfill.subprocess.Popen", side_effect=lambda *args, **kwargs: SimpleNamespace(pid=next(process_ids))):
+        result = start_parallel_embedding_backfill_processes(
+            worker_count=2,
+            state_path=state_path,
+            log_path=log_path,
+            manifest_path=manifest_path,
+        )
+
+    assert result.status == "started"
+    assert result.worker_count == 2
+    assert manifest_path.exists()
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["worker_count"] == 2
+    assert len(manifest["workers"]) == 2
+    shard_one = json.loads((tmp_path / "embed-state.shard-01-of-02.json").read_text(encoding="utf-8"))
+    shard_two = json.loads((tmp_path / "embed-state.shard-02-of-02.json").read_text(encoding="utf-8"))
+    assert shard_one["worker_index"] == 0
+    assert shard_two["worker_index"] == 1
+    assert shard_one["worker_count"] == 2
+    assert shard_two["worker_count"] == 2
 
 
 def test_start_derived_backfill_process_spawns_detached_worker_and_writes_state(tmp_path: Path) -> None:
@@ -354,3 +401,40 @@ def test_read_derived_backfill_state_aggregates_parallel_manifest(tmp_path: Path
     assert aggregated["target_documents"] == 18
     assert aggregated["processed_documents"] == 12
     assert aggregated["remaining_documents"] == 6
+
+
+def test_read_embedding_backfill_state_aggregates_parallel_manifest(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "embed-manifest.json"
+    shard_one_state_path = tmp_path / "embed-state.shard-01-of-02.json"
+    shard_two_state_path = tmp_path / "embed-state.shard-02-of-02.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "status": "running",
+                "worker_count": 2,
+                "manifest_path": str(manifest_path),
+                "workers": [
+                    {"state_path": str(shard_one_state_path)},
+                    {"state_path": str(shard_two_state_path)},
+                ],
+                "created_at": "2026-03-11T15:00:00+00:00",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    shard_one_state_path.write_text(
+        json.dumps({"status": "running", "processed_units": 120, "remaining_units": 1800}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    shard_two_state_path.write_text(
+        json.dumps({"status": "completed", "processed_units": 140, "remaining_units": 1720}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    aggregated = read_embedding_backfill_state(manifest_path=manifest_path)
+
+    assert aggregated["status"] == "running"
+    assert aggregated["worker_count"] == 2
+    assert aggregated["processed_units"] == 260
+    assert aggregated["remaining_units"] == 1720

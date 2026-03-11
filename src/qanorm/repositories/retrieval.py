@@ -155,6 +155,7 @@ class RetrievalUnitRepository:
                 RetrievalUnit.start_order_index.asc().nullsfirst(),
                 RetrievalUnit.id.asc(),
             )
+            .with_for_update(skip_locked=True)
             .limit(limit)
         )
         return list(self.session.execute(stmt).scalars().all())
