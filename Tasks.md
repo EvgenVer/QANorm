@@ -53,7 +53,7 @@
 - [x] Реализовать `lookup_locator`.
 - [x] Реализовать lexical retrieval по `document_nodes` и `retrieval_units`.
 - [ ] Реализовать dense retrieval по `retrieval_units` после готовности фонового backfill `embedding`.
-- [ ] Реализовать merge и rerank shortlist.
+- [x] Реализовать merge и rerank shortlist.
 - [x] Реализовать `read_node` и `expand_neighbors`.
 - [x] Реализовать context builder и compact evidence pack.
 - [x] Добавить unit/integration tests на retrieval engine.

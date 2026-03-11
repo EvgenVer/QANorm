@@ -153,7 +153,7 @@ class RetrievalEngine:
 
         locator_normalized = locator
         node_hits = [
-            self._build_node_hit(node=node, score=1.0)
+            self._build_node_hit(node=node, score=1.0, source_kind="document_node_locator")
             for node in self.document_nodes.list_by_locator(document_version_id, locator_normalized)
         ]
 
@@ -238,14 +238,41 @@ class RetrievalEngine:
             documents = self.discover_documents(parsed)
 
         version_ids = [item.document_version_id for item in documents if item.document_version_id is not None]
-        hits: list[RetrievalHit] = []
+        locator_hits: list[RetrievalHit] = []
         for version_id in version_ids:
             for locator in parsed.explicit_locator_values:
-                hits.extend(self.lookup_locator(document_version_id=version_id, locator=locator))
-        hits.extend(self.search_lexical(parsed.lexical_query, document_version_ids=version_ids))
+                locator_hits.extend(self.lookup_locator(document_version_id=version_id, locator=locator))
+        lexical_hits = self.search_lexical(parsed.lexical_query, document_version_ids=version_ids)
+        reranked = self.merge_and_rerank_hits(
+            locator_hits=locator_hits,
+            lexical_hits=lexical_hits,
+            explicit_locator_count=len(parsed.explicit_locator_values),
+        )
+        return reranked[: self.config.retrieval.evidence_pack_size]
 
-        deduped = _dedupe_hits(hits)
-        return deduped[: self.config.retrieval.evidence_pack_size]
+    def merge_and_rerank_hits(
+        self,
+        *,
+        locator_hits: list[RetrievalHit],
+        lexical_hits: list[RetrievalHit],
+        explicit_locator_count: int,
+    ) -> list[RetrievalHit]:
+        """Merge hits from different sources and rerank a compact shortlist."""
+
+        merged = _dedupe_hits(locator_hits + lexical_hits)
+        scored: list[tuple[float, int, RetrievalHit]] = []
+        for hit in merged[: self.config.retrieval.merged_top_k]:
+            rerank_score = hit.score
+            if hit.source_kind.endswith("locator"):
+                rerank_score += 0.3
+            elif hit.source_kind == "retrieval_unit_lexical":
+                rerank_score += 0.08
+            if explicit_locator_count and hit.locator:
+                rerank_score += 0.05
+            scored.append((round(rerank_score, 4), hit.order_index or 0, hit))
+
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        return [item[2] for item in scored[: self.config.retrieval.rerank_top_k]]
 
     def _build_document_candidate(
         self,
@@ -308,12 +335,12 @@ class RetrievalEngine:
         hits.sort(key=lambda item: (-item.score, item.order_index or 0))
         return hits
 
-    def _build_node_hit(self, *, node: DocumentNode, score: float) -> RetrievalHit:
+    def _build_node_hit(self, *, node: DocumentNode, score: float, source_kind: str = "document_node") -> RetrievalHit:
         document = self._load_document_by_version(node.document_version_id)
         if document is None:
             raise ValueError(f"Document not found for version {node.document_version_id}")
         return RetrievalHit(
-            source_kind="document_node",
+            source_kind=source_kind,
             score=score,
             document_id=document.id,
             document_version_id=node.document_version_id,
