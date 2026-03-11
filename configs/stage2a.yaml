@@ -1,0 +1,73 @@
+stage2a:
+  # Gemini is the first provider for MVP. Adapter code should stay vendor-isolated.
+  provider:
+    name: gemini
+    api:
+      base_url_env: QANORM_GEMINI_API_BASE_URL
+      api_key_env: QANORM_GEMINI_API_KEY
+
+  # DSPy stays only in the agent layer; retrieval remains custom.
+  dspy:
+    cache_enabled: true
+    cache_dir_env: QANORM_DSPY_CACHE_DIR
+
+  # Recommended model split as of 2026-03-11:
+  # - strongest tool-use controller on the freshest available lineup
+  # - stable 2.5 models for answer and verification to keep MVP predictable
+  models:
+    controller: gemini-3.1-pro-preview-customtools
+    controller_fallback: gemini-2.5-pro
+    composer: gemini-2.5-flash
+    verifier: gemini-2.5-flash
+    reranker: gemini-2.5-flash-lite
+    embeddings: gemini-embedding-2-preview
+    embeddings_fallback: gemini-embedding-001
+
+  runtime:
+    max_tool_steps: 5
+    max_corrective_iterations: 2
+    request_timeout_seconds: 90
+    retry_attempts: 4
+    retry_backoff_seconds: 2.0
+    enable_streaming: true
+    enable_debug_trace: true
+
+  generation:
+    controller_temperature: 0.1
+    composer_temperature: 0.2
+    verifier_temperature: 0.0
+    max_answer_tokens: 3000
+    max_verifier_tokens: 1500
+
+  # Retrieval units should be materially larger than document_nodes.
+  indexing:
+    semantic_block_min_chars: 700
+    semantic_block_target_chars: 1200
+    semantic_block_max_chars: 1800
+    semantic_block_max_nodes: 12
+    document_card_max_headings: 16
+    embed_batch_size: 32
+
+  retrieval:
+    discover_documents_top_k: 8
+    document_shortlist_size: 6
+    lexical_top_k: 30
+    dense_top_k: 30
+    merged_top_k: 24
+    rerank_top_k: 12
+    evidence_pack_size: 6
+    neighbor_window: 1
+    min_direct_answer_evidence: 2
+    enable_partial_answer_on_low_confidence: true
+
+  embeddings:
+    query_task_type: RETRIEVAL_QUERY
+    document_task_type: RETRIEVAL_DOCUMENT
+    output_dimensionality: 1536
+
+  ui:
+    title: QANorm Stage 2A
+    stream: true
+    show_debug_panel: true
+    host: 127.0.0.1
+    port: 8501
