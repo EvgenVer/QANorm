@@ -79,12 +79,12 @@
 
 ### Блок F. Answer layer
 
-- [ ] Реализовать DSPy-based `Composer`.
-- [ ] Реализовать DSPy-based `GroundingVerifier`.
-- [ ] Реализовать claim-to-evidence mapping.
-- [ ] Реализовать фильтрацию unsupported statements.
-- [ ] Реализовать финальный answer model с citations и ограничениями ответа.
-- [ ] Добавить unit/integration tests на answer layer.
+- [x] Реализовать DSPy-based `Composer`.
+- [x] Реализовать DSPy-based `GroundingVerifier`.
+- [x] Реализовать claim-to-evidence mapping.
+- [x] Реализовать фильтрацию unsupported statements.
+- [x] Реализовать финальный answer model с citations и ограничениями ответа.
+- [x] Добавить unit/integration tests на answer layer.
 
 ### Блок G. Streamlit MVP
 
