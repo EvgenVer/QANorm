@@ -56,6 +56,21 @@ class Stage2AEmbeddingsConfig(BaseModel):
     average_chars_per_token: float = Field(default=4.0, gt=0.0)
 
 
+class Stage2ARetrievalConfig(BaseModel):
+    """Retrieval limits and shortlist sizes."""
+
+    discover_documents_top_k: int = Field(ge=1)
+    document_shortlist_size: int = Field(ge=1)
+    lexical_top_k: int = Field(ge=1)
+    dense_top_k: int = Field(ge=1)
+    merged_top_k: int = Field(ge=1)
+    rerank_top_k: int = Field(ge=1)
+    evidence_pack_size: int = Field(ge=1)
+    neighbor_window: int = Field(ge=0)
+    min_direct_answer_evidence: int = Field(ge=1)
+    enable_partial_answer_on_low_confidence: bool = True
+
+
 class Stage2AConfig(BaseModel):
     """Normalized Stage 2A configuration bundle."""
 
@@ -63,6 +78,7 @@ class Stage2AConfig(BaseModel):
     models: Stage2AModelConfig
     indexing: Stage2AIndexingConfig
     embeddings: Stage2AEmbeddingsConfig
+    retrieval: Stage2ARetrievalConfig
 
 
 def load_stage2a_config(config_path: Path | None = None) -> Stage2AConfig:
@@ -81,4 +97,3 @@ def get_stage2a_config() -> Stage2AConfig:
     """Return cached Stage 2A configuration."""
 
     return load_stage2a_config()
-

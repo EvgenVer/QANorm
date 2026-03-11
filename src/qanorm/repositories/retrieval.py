@@ -103,6 +103,19 @@ class RetrievalUnitRepository:
         )
         return list(self.session.execute(stmt).scalars().all())
 
+    def list_all_by_type(self, unit_type: str) -> list[RetrievalUnit]:
+        """List all retrieval units of one type across the corpus."""
+
+        stmt = (
+            select(RetrievalUnit)
+            .where(RetrievalUnit.unit_type == unit_type)
+            .order_by(
+                RetrievalUnit.created_at.asc(),
+                RetrievalUnit.start_order_index.asc().nullsfirst(),
+            )
+        )
+        return list(self.session.execute(stmt).scalars().all())
+
     def list_for_document_version_and_type(self, document_version_id: UUID, unit_type: str) -> list[RetrievalUnit]:
         """List retrieval units for one document version filtered by type."""
 

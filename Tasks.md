@@ -47,16 +47,16 @@
 ### Блок C. Retrieval engine
 
 - [ ] Продолжать реализацию retrieval engine по задачам, не зависящим от готовых `embedding`, пока фоновый backfill не завершен.
-- [ ] Реализовать детерминированный parser вопроса.
-- [ ] Реализовать `resolve_document` по коду, алиасу и сокращению.
-- [ ] Реализовать `discover_documents` для вопросов без явной нормы.
-- [ ] Реализовать `lookup_locator`.
-- [ ] Реализовать lexical retrieval по `document_nodes` и `retrieval_units`.
+- [x] Реализовать детерминированный parser вопроса.
+- [x] Реализовать `resolve_document` по коду, алиасу и сокращению.
+- [x] Реализовать `discover_documents` для вопросов без явной нормы.
+- [x] Реализовать `lookup_locator`.
+- [x] Реализовать lexical retrieval по `document_nodes` и `retrieval_units`.
 - [ ] Реализовать dense retrieval по `retrieval_units` после готовности фонового backfill `embedding`.
 - [ ] Реализовать merge и rerank shortlist.
-- [ ] Реализовать `read_node` и `expand_neighbors`.
-- [ ] Реализовать context builder и compact evidence pack.
-- [ ] Добавить unit/integration tests на retrieval engine.
+- [x] Реализовать `read_node` и `expand_neighbors`.
+- [x] Реализовать context builder и compact evidence pack.
+- [x] Добавить unit/integration tests на retrieval engine.
 
 ### Блок D. DSPy layer, provider layer и contracts
 

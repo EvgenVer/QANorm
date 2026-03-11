@@ -47,6 +47,33 @@ class DocumentNodeRepository:
         )
         return list(self.session.execute(stmt).scalars().all())
 
+    def list_by_locator(self, document_version_id: UUID, locator_normalized: str) -> list[DocumentNode]:
+        """List nodes with one normalized locator inside a document version."""
+
+        stmt = (
+            select(DocumentNode)
+            .where(
+                DocumentNode.document_version_id == document_version_id,
+                DocumentNode.locator_normalized == locator_normalized,
+            )
+            .order_by(DocumentNode.order_index.asc())
+        )
+        return list(self.session.execute(stmt).scalars().all())
+
+    def list_neighbors(self, document_version_id: UUID, *, order_index: int, window: int) -> list[DocumentNode]:
+        """List neighboring nodes around one order index."""
+
+        stmt = (
+            select(DocumentNode)
+            .where(
+                DocumentNode.document_version_id == document_version_id,
+                DocumentNode.order_index >= order_index - window,
+                DocumentNode.order_index <= order_index + window,
+            )
+            .order_by(DocumentNode.order_index.asc())
+        )
+        return list(self.session.execute(stmt).scalars().all())
+
 
 class DocumentReferenceRepository:
     """Data access helpers for document references."""
