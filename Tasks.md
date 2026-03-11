@@ -60,12 +60,12 @@
 
 ### Блок D. DSPy layer, provider layer и contracts
 
-- [ ] Добавить Pydantic-схемы запросов, observations, evidence и answer DTO.
-- [ ] Добавить DSPy bootstrap для `ControllerAgent`, `Composer`, `GroundingVerifier`.
-- [ ] Добавить provider abstraction и конфигурацию модельного bootstrap.
-- [ ] Реализовать Gemini-конфигурацию для DSPy runtime.
-- [ ] Добавить retries, timeouts и обработку ошибок провайдера.
-- [ ] Добавить тесты на DSPy/provider bootstrap.
+- [x] Добавить Pydantic-схемы запросов, observations, evidence и answer DTO.
+- [x] Добавить DSPy bootstrap для `ControllerAgent`, `Composer`, `GroundingVerifier`.
+- [x] Добавить provider abstraction и конфигурацию модельного bootstrap.
+- [x] Реализовать Gemini-конфигурацию для DSPy runtime.
+- [x] Добавить retries, timeouts и обработку ошибок провайдера.
+- [x] Добавить тесты на DSPy/provider bootstrap.
 
 ### Блок E. Agent runtime
 

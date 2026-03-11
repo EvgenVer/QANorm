@@ -25,6 +25,13 @@ class Stage2AProviderConfig(BaseModel):
     api: Stage2AProviderApiConfig
 
 
+class Stage2ADspyConfig(BaseModel):
+    """DSPy cache and bootstrap settings."""
+
+    cache_enabled: bool = True
+    cache_dir_env: str = Field(min_length=1)
+
+
 class Stage2AModelConfig(BaseModel):
     """Configured model names for Stage 2A."""
 
@@ -56,6 +63,28 @@ class Stage2AEmbeddingsConfig(BaseModel):
     average_chars_per_token: float = Field(default=4.0, gt=0.0)
 
 
+class Stage2ARuntimeConfig(BaseModel):
+    """Runtime limits and provider request behavior."""
+
+    max_tool_steps: int = Field(ge=1)
+    max_corrective_iterations: int = Field(ge=0)
+    request_timeout_seconds: int = Field(gt=0)
+    retry_attempts: int = Field(ge=0)
+    retry_backoff_seconds: float = Field(gt=0.0)
+    enable_streaming: bool = True
+    enable_debug_trace: bool = True
+
+
+class Stage2AGenerationConfig(BaseModel):
+    """Generation settings for agent-facing roles."""
+
+    controller_temperature: float = Field(ge=0.0)
+    composer_temperature: float = Field(ge=0.0)
+    verifier_temperature: float = Field(ge=0.0)
+    max_answer_tokens: int = Field(ge=1)
+    max_verifier_tokens: int = Field(ge=1)
+
+
 class Stage2ARetrievalConfig(BaseModel):
     """Retrieval limits and shortlist sizes."""
 
@@ -71,14 +100,28 @@ class Stage2ARetrievalConfig(BaseModel):
     enable_partial_answer_on_low_confidence: bool = True
 
 
+class Stage2AUiConfig(BaseModel):
+    """Minimal Streamlit UI settings for MVP."""
+
+    title: str = Field(min_length=1)
+    stream: bool = True
+    show_debug_panel: bool = True
+    host: str = Field(min_length=1)
+    port: int = Field(ge=1, le=65535)
+
+
 class Stage2AConfig(BaseModel):
     """Normalized Stage 2A configuration bundle."""
 
     provider: Stage2AProviderConfig
+    dspy: Stage2ADspyConfig
     models: Stage2AModelConfig
     indexing: Stage2AIndexingConfig
     embeddings: Stage2AEmbeddingsConfig
+    runtime: Stage2ARuntimeConfig
+    generation: Stage2AGenerationConfig
     retrieval: Stage2ARetrievalConfig
+    ui: Stage2AUiConfig
 
 
 def load_stage2a_config(config_path: Path | None = None) -> Stage2AConfig:
