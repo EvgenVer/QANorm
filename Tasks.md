@@ -35,18 +35,24 @@
 - [ ] Реализовать builder `document_card` units.
 - [ ] Реализовать builder `semantic_block` units поверх диапазонов `document_nodes`.
 - [ ] Реализовать backfill `retrieval_units`.
-- [ ] Реализовать индексацию `text_tsv` и `embedding` для `retrieval_units`.
+- [ ] Реализовать индексацию `text_tsv` для `retrieval_units`.
+- [ ] Реализовать preflight-оценку для backfill `embedding` по `retrieval_units`: количество embeddings, ориентировочное количество токенов, оценку стоимости API, ожидаемый объем хранения в БД.
+- [ ] Подготовить краткий отчет по preflight-оценке embeddings и передать его пользователю на одобрение перед запуском генерации.
+- [ ] Реализовать отдельный фоновый resumable-процесс для backfill `embedding` с чекпоинтами, промежуточными сохранениями, возможностью продолжения после прерывания и логированием в файл.
+- [ ] Добавить CLI-команду запуска/возобновления фонового backfill `embedding` без блокировки основной разработки.
+- [ ] После одобрения пользователя запускать backfill `embedding` в фоне и продолжать реализацию задач, не требующих готового dense-слоя.
 - [ ] Добавить CLI-команды подготовки и пересборки derived retrieval data.
 - [ ] Добавить unit/integration tests на сборку `retrieval_units`.
 
 ### Блок C. Retrieval engine
 
+- [ ] Продолжать реализацию retrieval engine по задачам, не зависящим от готовых `embedding`, пока фоновый backfill не завершен.
 - [ ] Реализовать детерминированный parser вопроса.
 - [ ] Реализовать `resolve_document` по коду, алиасу и сокращению.
 - [ ] Реализовать `discover_documents` для вопросов без явной нормы.
 - [ ] Реализовать `lookup_locator`.
 - [ ] Реализовать lexical retrieval по `document_nodes` и `retrieval_units`.
-- [ ] Реализовать dense retrieval по `retrieval_units`.
+- [ ] Реализовать dense retrieval по `retrieval_units` после готовности фонового backfill `embedding`.
 - [ ] Реализовать merge и rerank shortlist.
 - [ ] Реализовать `read_node` и `expand_neighbors`.
 - [ ] Реализовать context builder и compact evidence pack.

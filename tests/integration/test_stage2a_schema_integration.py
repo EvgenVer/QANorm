@@ -24,7 +24,7 @@ from qanorm.settings import get_settings
 
 
 @contextmanager
-def _temporary_migrated_database() -> Iterator[str]:
+def _temporary_migrated_database(*, revision: str = "head") -> Iterator[str]:
     current_url = os.environ.get("QANORM_DB_URL") or str(get_settings().env.db_url)
     base_url = make_url(current_url)
     admin_url = base_url.set(database="postgres")
@@ -39,7 +39,7 @@ def _temporary_migrated_database() -> Iterator[str]:
 
         os.environ["QANORM_DB_URL"] = test_url
         get_settings.cache_clear()
-        command.upgrade(_build_alembic_config(), "head")
+        command.upgrade(_build_alembic_config(), revision)
         yield test_url
     finally:
         get_settings.cache_clear()
@@ -182,4 +182,55 @@ def test_402_integration_stage2a_repositories_roundtrip_retrieval_entities() -> 
             assert stored_node.locator_raw == "cl. 1.1"
             assert stored_node.heading_path == "Section 1 > Loads"
 
+        engine.dispose()
+
+
+def test_403_integration_stage2a_cleanup_migration_drops_legacy_tables() -> None:
+    legacy_tables = (
+        "retrieval_chunks",
+        "chunk_embeddings",
+        "qa_sessions",
+        "qa_queries",
+        "qa_messages",
+        "qa_subtasks",
+        "qa_evidence",
+        "qa_answers",
+        "verification_reports",
+        "tool_invocations",
+        "search_events",
+        "trusted_source_documents",
+        "trusted_source_chunks",
+        "trusted_source_sync_runs",
+        "trusted_source_cache_entries",
+        "freshness_checks",
+        "audit_events",
+        "security_events",
+    )
+
+    with _temporary_migrated_database(revision="20260311_000002") as database_url:
+        engine = create_engine(database_url, future=True)
+
+        with engine.begin() as connection:
+            for table_name in legacy_tables:
+                connection.execute(text(f'CREATE TABLE "{table_name}" (id integer primary key)'))
+
+        inspector = inspect(engine)
+        assert set(legacy_tables) <= set(inspector.get_table_names())
+        engine.dispose()
+
+        previous_env_url = os.environ.get("QANORM_DB_URL")
+        os.environ["QANORM_DB_URL"] = database_url
+        get_settings.cache_clear()
+        try:
+            command.upgrade(_build_alembic_config(), "head")
+        finally:
+            get_settings.cache_clear()
+            if previous_env_url is None:
+                os.environ.pop("QANORM_DB_URL", None)
+            else:
+                os.environ["QANORM_DB_URL"] = previous_env_url
+
+        engine = create_engine(database_url, future=True)
+        inspector = inspect(engine)
+        assert set(legacy_tables).isdisjoint(inspector.get_table_names())
         engine.dispose()
