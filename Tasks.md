@@ -69,13 +69,13 @@
 
 ### Блок E. Agent runtime
 
-- [ ] Реализовать DSPy-based `ControllerAgent`.
-- [ ] Реализовать DSPy `ReAct-lite` loop с ограничением по шагам.
-- [ ] Подключить кастомные retrieval tools к DSPy runtime.
-- [ ] Реализовать policy выбора retrieval tools.
-- [ ] Реализовать stop conditions и corrective iteration policy.
-- [ ] Реализовать переход в partial mode при слабом evidence.
-- [ ] Добавить unit/integration tests на runtime.
+- [x] Реализовать DSPy-based `ControllerAgent`.
+- [x] Реализовать DSPy `ReAct-lite` loop с ограничением по шагам.
+- [x] Подключить кастомные retrieval tools к DSPy runtime.
+- [x] Реализовать policy выбора retrieval tools.
+- [x] Реализовать stop conditions и corrective iteration policy.
+- [x] Реализовать переход в partial mode при слабом evidence.
+- [x] Добавить unit/integration tests на runtime.
 
 ### Блок F. Answer layer
 
