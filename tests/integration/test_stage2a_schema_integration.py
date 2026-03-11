@@ -12,15 +12,17 @@ from sqlalchemy.orm import Session
 
 from qanorm.cli.main import _build_alembic_config
 from qanorm.db.types import StatusNormalized
-from qanorm.models import Document, DocumentAlias, DocumentNode, DocumentVersion, RetrievalUnit
+from qanorm.models import Document, DocumentAlias, DocumentNode, DocumentSource, DocumentVersion, RetrievalUnit
 from qanorm.repositories import (
     DocumentAliasRepository,
     DocumentNodeRepository,
     DocumentRepository,
+    DocumentSourceRepository,
     DocumentVersionRepository,
     RetrievalUnitRepository,
 )
 from qanorm.settings import get_settings
+from qanorm.stage2a.indexing.backfill import build_embedding_preflight_report, rebuild_derived_retrieval_data
 
 
 @contextmanager
@@ -233,4 +235,93 @@ def test_403_integration_stage2a_cleanup_migration_drops_legacy_tables() -> None
         engine = create_engine(database_url, future=True)
         inspector = inspect(engine)
         assert set(legacy_tables).isdisjoint(inspector.get_table_names())
+        engine.dispose()
+
+
+def test_404_integration_stage2a_rebuilds_aliases_and_retrieval_units() -> None:
+    with _temporary_migrated_database() as database_url:
+        engine = create_engine(database_url, future=True)
+
+        with Session(engine) as session:
+            document = Document(
+                normalized_code="СП 20.13330.2016",
+                display_code="СП 20.13330.2016",
+                title="Нагрузки и воздействия",
+                status_normalized=StatusNormalized.ACTIVE,
+            )
+            document = DocumentRepository(session).add(document)
+
+            version = DocumentVersion(
+                document_id=document.id,
+                status_normalized=StatusNormalized.ACTIVE,
+                is_active=True,
+            )
+            version = DocumentVersionRepository(session).add(version)
+            document.current_version_id = version.id
+            session.flush()
+
+            source = DocumentSourceRepository(session).add(
+                DocumentSource(
+                    document_id=document.id,
+                    document_version_id=version.id,
+                    card_url="https://docs.example.test/cards/sp-20",
+                    html_url="https://docs.example.test/html/sp-20",
+                    pdf_url="https://docs.example.test/pdf/sp-20.pdf",
+                    print_url="https://docs.example.test/print/sp-20",
+                )
+            )
+            assert source.card_url.endswith("sp-20")
+
+            title_node = DocumentNodeRepository(session).add(
+                DocumentNode(
+                    document_version_id=version.id,
+                    node_type="title",
+                    title="Нагрузки и воздействия",
+                    text="Нагрузки и воздействия",
+                    order_index=1,
+                )
+            )
+            section_node = DocumentNodeRepository(session).add(
+                DocumentNode(
+                    document_version_id=version.id,
+                    parent_node_id=title_node.id,
+                    node_type="section",
+                    label="1",
+                    title="Общие положения",
+                    text="1 Общие положения",
+                    order_index=2,
+                )
+            )
+            DocumentNodeRepository(session).add(
+                DocumentNode(
+                    document_version_id=version.id,
+                    parent_node_id=section_node.id,
+                    node_type="paragraph",
+                    text="При проектировании следует учитывать постоянные и временные нагрузки.",
+                    order_index=3,
+                )
+            )
+
+            result = rebuild_derived_retrieval_data(session)
+            session.commit()
+            document_id = document.id
+            version_id = version.id
+
+            assert result.aliases.aliases_created >= 4
+            assert result.retrieval_units.document_versions_processed == 1
+            assert result.retrieval_units.units_created >= 2
+
+        with Session(engine) as session:
+            aliases = DocumentAliasRepository(session).list_for_document(document_id)
+            units = RetrievalUnitRepository(session).list_for_document_version(version_id)
+            nodes = DocumentNodeRepository(session).list_for_document_version(version_id)
+            preflight = build_embedding_preflight_report(session, price_per_million_tokens=0.2)
+
+            assert any(alias.alias_normalized == "sp 20.13330" for alias in aliases)
+            assert {unit.unit_type for unit in units} == {"document_card", "semantic_block"}
+            assert nodes[1].locator_normalized == "1"
+            assert nodes[1].heading_path == "Нагрузки и воздействия > 1 Общие положения"
+            assert preflight.pending_units == len(units)
+            assert preflight.total_units == len(units)
+
         engine.dispose()

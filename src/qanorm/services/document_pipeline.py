@@ -23,6 +23,7 @@ from qanorm.jobs.scheduler import create_job
 from qanorm.logging import get_ingestion_logger
 from qanorm.models import Document, DocumentNode, DocumentReference, DocumentSource, DocumentVersion, RawArtifact
 from qanorm.normalizers.codes import normalize_document_code
+from qanorm.normalizers.locators import normalize_locator_value
 from qanorm.normalizers.structure import normalize_document_structure_text
 from qanorm.normalizers.statuses import resolve_status_conflict
 from qanorm.ocr.quality import calculate_ocr_confidence, is_low_confidence_parse
@@ -685,10 +686,13 @@ def normalize_document_structure(
         )
 
     node_id_by_order: dict[int, UUID] = {}
+    heading_path_by_order: dict[int, str | None] = {}
     node_models: list[DocumentNode] = []
     for draft in normalized.nodes:
         node_id = uuid4()
         node_id_by_order[draft.order_index] = node_id
+        heading_path = _build_heading_path_for_draft(draft, normalized.nodes, heading_path_by_order)
+        heading_path_by_order[draft.order_index] = heading_path
         node_models.append(
             DocumentNode(
                 id=node_id,
@@ -698,6 +702,9 @@ def normalize_document_structure(
                 label=draft.label,
                 title=draft.title,
                 text=draft.text,
+                locator_raw=draft.label,
+                locator_normalized=normalize_locator_value(draft.label),
+                heading_path=heading_path,
                 order_index=draft.order_index,
                 page_from=draft.page_from,
                 page_to=draft.page_to,
@@ -968,3 +975,31 @@ def _dataclass_to_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
     raise TypeError(f"Unsupported pipeline result type: {type(value)!r}")
+
+
+def _build_heading_path_for_draft(
+    draft: Any,
+    drafts: list[Any],
+    heading_path_by_order: dict[int, str | None],
+) -> str | None:
+    parent_path = heading_path_by_order.get(draft.parent_order_index)
+    heading_label = _build_heading_label(draft)
+    if heading_label is None:
+        return parent_path
+    if not parent_path:
+        return heading_label
+    return f"{parent_path} > {heading_label}"
+
+
+def _build_heading_label(draft: Any) -> str | None:
+    if draft.node_type == "paragraph":
+        return None
+    if draft.title and draft.label:
+        return f"{draft.label} {draft.title}"
+    if draft.title:
+        return draft.title
+    if draft.label:
+        return draft.label
+    if draft.node_type == "title":
+        return draft.text
+    return None

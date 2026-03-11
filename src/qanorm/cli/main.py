@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import json
 from pathlib import Path
 
@@ -15,6 +16,18 @@ from qanorm.services.health import get_health_report
 from qanorm.services.ingestion import check_configuration, run_seed_crawl
 from qanorm.services.metrics import get_ingestion_metrics, get_ingestion_test_run_report
 from qanorm.services.refresh_service import request_document_refresh, run_document_refresh
+from qanorm.stage2a.indexing.backfill import (
+    backfill_derived_retrieval_data_worker,
+    backfill_retrieval_unit_embeddings,
+    read_derived_backfill_state,
+    read_embedding_backfill_state,
+    run_document_alias_backfill,
+    run_embedding_preflight,
+    run_rebuild_derived_retrieval_data,
+    run_retrieval_unit_backfill,
+    start_derived_backfill_process,
+    start_embedding_backfill_process,
+)
 
 
 def _build_alembic_config() -> Config:
@@ -49,6 +62,73 @@ def build_parser() -> argparse.ArgumentParser:
 
     update_parser = subparsers.add_parser("update-document", help="Refresh one document immediately.")
     update_parser.add_argument("document_code", help="Canonical or display document code.")
+
+    stage2a_alias_parser = subparsers.add_parser("stage2a-build-aliases", help="Rebuild Stage 2A document aliases.")
+    stage2a_alias_parser.add_argument("--document-code", help="Optional canonical document code.", default=None)
+
+    stage2a_units_parser = subparsers.add_parser("stage2a-build-units", help="Rebuild Stage 2A retrieval units.")
+    stage2a_units_parser.add_argument("--document-code", help="Optional canonical document code.", default=None)
+
+    stage2a_rebuild_parser = subparsers.add_parser(
+        "stage2a-rebuild-derived",
+        help="Rebuild all Stage 2A derived retrieval data.",
+    )
+    stage2a_rebuild_parser.add_argument("--document-code", help="Optional canonical document code.", default=None)
+
+    stage2a_derived_start_parser = subparsers.add_parser(
+        "stage2a-derived-start",
+        help="Start or resume detached Stage 2A derived retrieval-data rebuild.",
+    )
+    stage2a_derived_start_parser.add_argument("--document-code", help="Optional canonical document code.", default=None)
+    stage2a_derived_start_parser.add_argument("--state-path", default=None, help="Optional path to the checkpoint state JSON.")
+    stage2a_derived_start_parser.add_argument("--log-path", default=None, help="Optional path to the derived rebuild log file.")
+
+    stage2a_derived_status_parser = subparsers.add_parser(
+        "stage2a-derived-status",
+        help="Read the persisted state of the Stage 2A derived retrieval-data rebuild.",
+    )
+    stage2a_derived_status_parser.add_argument("--state-path", default=None, help="Optional path to the checkpoint state JSON.")
+    stage2a_derived_status_parser.add_argument("--log-path", default=None, help="Optional path to the derived rebuild log file.")
+
+    stage2a_derived_worker_parser = subparsers.add_parser(
+        "stage2a-derived-backfill-worker",
+        help=argparse.SUPPRESS,
+    )
+    stage2a_derived_worker_parser.add_argument("--document-code", default=None)
+    stage2a_derived_worker_parser.add_argument("--state-path", required=True)
+    stage2a_derived_worker_parser.add_argument("--log-path", required=True)
+
+    stage2a_preflight_parser = subparsers.add_parser(
+        "stage2a-embed-preflight",
+        help="Estimate Stage 2A embedding workload before running backfill.",
+    )
+    stage2a_preflight_parser.add_argument(
+        "--price-per-1m-tokens",
+        type=float,
+        default=None,
+        help="Optional override for estimated input price in USD per 1M tokens.",
+    )
+
+    stage2a_embed_start_parser = subparsers.add_parser(
+        "stage2a-embed-start",
+        help="Start or resume detached Stage 2A embedding backfill.",
+    )
+    stage2a_embed_start_parser.add_argument("--state-path", default=None, help="Optional path to the checkpoint state JSON.")
+    stage2a_embed_start_parser.add_argument("--log-path", default=None, help="Optional path to the embedding backfill log file.")
+
+    stage2a_embed_status_parser = subparsers.add_parser(
+        "stage2a-embed-status",
+        help="Read the persisted state of the Stage 2A embedding backfill.",
+    )
+    stage2a_embed_status_parser.add_argument("--state-path", default=None, help="Optional path to the checkpoint state JSON.")
+    stage2a_embed_status_parser.add_argument("--log-path", default=None, help="Optional path to the embedding backfill log file.")
+
+    stage2a_embed_worker_parser = subparsers.add_parser(
+        "stage2a-embed-backfill-worker",
+        help=argparse.SUPPRESS,
+    )
+    stage2a_embed_worker_parser.add_argument("--state-path", required=True)
+    stage2a_embed_worker_parser.add_argument("--log-path", required=True)
 
     return parser
 
@@ -99,4 +179,88 @@ def main() -> None:
         print(json.dumps(run_document_refresh(args.document_code), ensure_ascii=False, indent=2))
         return
 
+    if args.command == "stage2a-build-aliases":
+        print(json.dumps(run_document_alias_backfill(document_code=args.document_code), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "stage2a-build-units":
+        print(json.dumps(run_retrieval_unit_backfill(document_code=args.document_code), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "stage2a-rebuild-derived":
+        print(json.dumps(run_rebuild_derived_retrieval_data(document_code=args.document_code), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "stage2a-derived-start":
+        print(
+            json.dumps(
+                start_derived_backfill_process(
+                    document_code=args.document_code,
+                    state_path=args.state_path,
+                    log_path=args.log_path,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if args.command == "stage2a-derived-status":
+        print(json.dumps(read_derived_backfill_state(state_path=args.state_path, log_path=args.log_path), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "stage2a-derived-backfill-worker":
+        print(
+            json.dumps(
+                asdict(
+                    backfill_derived_retrieval_data_worker(
+                        document_code=args.document_code,
+                        state_path=args.state_path,
+                        log_path=args.log_path,
+                    )
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if args.command == "stage2a-embed-preflight":
+        print(
+            json.dumps(
+                run_embedding_preflight(price_per_million_tokens=args.price_per_1m_tokens),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if args.command == "stage2a-embed-start":
+        print(
+            json.dumps(
+                start_embedding_backfill_process(state_path=args.state_path, log_path=args.log_path),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if args.command == "stage2a-embed-status":
+        print(json.dumps(read_embedding_backfill_state(state_path=args.state_path, log_path=args.log_path), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "stage2a-embed-backfill-worker":
+        print(
+            json.dumps(
+                asdict(backfill_retrieval_unit_embeddings(state_path=args.state_path, log_path=args.log_path)),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
     parser.print_help()
+
+
+if __name__ == "__main__":
+    main()

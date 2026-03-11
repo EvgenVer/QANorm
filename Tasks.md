@@ -30,19 +30,19 @@
 
 ### Блок B. Derived retrieval data
 
-- [ ] Реализовать builder алиасов документов из кодов, названий и ссылок.
-- [ ] Реализовать backfill `document_aliases`.
-- [ ] Реализовать builder `document_card` units.
-- [ ] Реализовать builder `semantic_block` units поверх диапазонов `document_nodes`.
-- [ ] Реализовать backfill `retrieval_units`.
-- [ ] Реализовать индексацию `text_tsv` для `retrieval_units`.
-- [ ] Реализовать preflight-оценку для backfill `embedding` по `retrieval_units`: количество embeddings, ориентировочное количество токенов, оценку стоимости API, ожидаемый объем хранения в БД.
+- [x] Реализовать builder алиасов документов из кодов, названий и ссылок.
+- [x] Реализовать backfill `document_aliases`.
+- [x] Реализовать builder `document_card` units.
+- [x] Реализовать builder `semantic_block` units поверх диапазонов `document_nodes`.
+- [x] Реализовать backfill `retrieval_units`.
+- [x] Реализовать индексацию `text_tsv` для `retrieval_units`.
+- [x] Реализовать preflight-оценку для backfill `embedding` по `retrieval_units`: количество embeddings, ориентировочное количество токенов, оценку стоимости API, ожидаемый объем хранения в БД.
 - [ ] Подготовить краткий отчет по preflight-оценке embeddings и передать его пользователю на одобрение перед запуском генерации.
-- [ ] Реализовать отдельный фоновый resumable-процесс для backfill `embedding` с чекпоинтами, промежуточными сохранениями, возможностью продолжения после прерывания и логированием в файл.
-- [ ] Добавить CLI-команду запуска/возобновления фонового backfill `embedding` без блокировки основной разработки.
+- [x] Реализовать отдельный фоновый resumable-процесс для backfill `embedding` с чекпоинтами, промежуточными сохранениями, возможностью продолжения после прерывания и логированием в файл.
+- [x] Добавить CLI-команду запуска/возобновления фонового backfill `embedding` без блокировки основной разработки.
 - [ ] После одобрения пользователя запускать backfill `embedding` в фоне и продолжать реализацию задач, не требующих готового dense-слоя.
-- [ ] Добавить CLI-команды подготовки и пересборки derived retrieval data.
-- [ ] Добавить unit/integration tests на сборку `retrieval_units`.
+- [x] Добавить CLI-команды подготовки и пересборки derived retrieval data.
+- [x] Добавить unit/integration tests на сборку `retrieval_units`.
 
 ### Блок C. Retrieval engine
 

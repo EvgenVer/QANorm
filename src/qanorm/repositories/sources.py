@@ -42,6 +42,16 @@ class DocumentSourceRepository:
         )
         return list(self.session.execute(stmt).scalars().all())
 
+    def list_for_document(self, document_id: UUID) -> list[DocumentSource]:
+        """List all sources linked to a canonical document."""
+
+        stmt = (
+            select(DocumentSource)
+            .where(DocumentSource.document_id == document_id)
+            .order_by(DocumentSource.seen_at.asc())
+        )
+        return list(self.session.execute(stmt).scalars().all())
+
 
 class RawArtifactRepository:
     """Data access helpers for raw artifacts."""

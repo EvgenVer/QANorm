@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Iterable
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from qanorm.models import DocumentAlias, RetrievalUnit
@@ -56,6 +56,12 @@ class DocumentAliasRepository:
             .order_by(DocumentAlias.created_at.asc())
         )
         return list(self.session.execute(stmt).scalars().all())
+
+    def delete_for_document(self, document_id: UUID) -> int:
+        """Delete all aliases for one canonical document."""
+
+        stmt = delete(DocumentAlias).where(DocumentAlias.document_id == document_id)
+        return int(self.session.execute(stmt).rowcount or 0)
 
 
 class RetrievalUnitRepository:
@@ -110,5 +116,32 @@ class RetrievalUnitRepository:
                 RetrievalUnit.start_order_index.asc().nullsfirst(),
                 RetrievalUnit.created_at.asc(),
             )
+        )
+        return list(self.session.execute(stmt).scalars().all())
+
+    def delete_for_document_version(self, document_version_id: UUID) -> int:
+        """Delete all retrieval units for one document version."""
+
+        stmt = delete(RetrievalUnit).where(RetrievalUnit.document_version_id == document_version_id)
+        return int(self.session.execute(stmt).rowcount or 0)
+
+    def count_embeddings_pending(self) -> int:
+        """Count retrieval units without generated embeddings."""
+
+        stmt = select(func.count()).select_from(RetrievalUnit).where(RetrievalUnit.embedding.is_(None))
+        return int(self.session.execute(stmt).scalar_one())
+
+    def list_pending_embeddings(self, *, limit: int) -> list[RetrievalUnit]:
+        """List retrieval units that still need embeddings."""
+
+        stmt = (
+            select(RetrievalUnit)
+            .where(RetrievalUnit.embedding.is_(None))
+            .order_by(
+                RetrievalUnit.created_at.asc(),
+                RetrievalUnit.start_order_index.asc().nullsfirst(),
+                RetrievalUnit.id.asc(),
+            )
+            .limit(limit)
         )
         return list(self.session.execute(stmt).scalars().all())
