@@ -17,8 +17,8 @@
 Для первой итерации принимаются следующие ограничения:
 
 - только локальная нормативная база `Stage 1`;
-- только `Custom-core`, без `LangChain`, `LangGraph`, `LlamaIndex`, `DSPy` в ядре;
-- только `Gemini` по `REST API + API key`;
+- `DSPy-hybrid`: кастомный retrieval/data layer и DSPy только для `ControllerAgent`, `Composer`, `GroundingVerifier`;
+- `Gemini` как первый провайдер через `API key` и DSPy/provider config;
 - только локальный интерфейс `Streamlit`;
 - без отдельного backend API;
 - без open web, trusted web и Telegram;
@@ -75,10 +75,10 @@
 Архитектура `Stage 2A`:
 
 1. `Streamlit UI`
-2. `ControllerAgent (ReAct-lite)`
+2. `ControllerAgent (DSPy ReAct-lite)`
 3. `Retrieval Engine`
-4. `Composer`
-5. `GroundingVerifier`
+4. `Composer (DSPy module)`
+5. `GroundingVerifier (DSPy module)`
 6. `Stage 1 DB + retrieval_units`
 
 ### 5.2. Логика запроса
@@ -99,7 +99,7 @@
 
 ### 5.3. ReAct-lite policy
 
-В MVP используется один управляющий агент.
+В MVP используется один управляющий агент, реализованный на DSPy.
 
 Ограничения цикла:
 
@@ -130,6 +130,7 @@ Retrieval должен быть гибридным:
 Принятый стек `Stage 2A`:
 
 - `Python 3.12`
+- `DSPy`
 - `Streamlit`
 - `httpx`
 - `tenacity`
@@ -150,7 +151,6 @@ Retrieval должен быть гибридным:
 - `LangChain`
 - `LangGraph`
 - `LlamaIndex`
-- `DSPy`
 - `FastAPI`
 - `Redis`
 - `Celery`
@@ -189,15 +189,15 @@ Retrieval должен быть гибридным:
 - `src/qanorm/stage2a/contracts`
   - Pydantic-схемы запросов, observations, evidence, answer models.
 - `src/qanorm/stage2a/providers`
-  - provider abstraction и Gemini REST adapter.
+  - DSPy LM bootstrap, provider abstraction и Gemini-конфигурация.
 - `src/qanorm/stage2a/retrieval`
   - parser, document discovery, resolver, lexical search, dense search, reranker, context builder.
 - `src/qanorm/stage2a/agent`
-  - `ControllerAgent` и `ReAct-lite` runtime.
+  - DSPy-based `ControllerAgent` и `ReAct-lite` runtime.
 - `src/qanorm/stage2a/composer`
-  - сборка grounded answer по evidence pack.
+  - DSPy-based `Composer` для grounded answer по evidence pack.
 - `src/qanorm/stage2a/verifier`
-  - проверка claim-to-evidence mapping и partial mode.
+  - DSPy-based `GroundingVerifier` для claim-to-evidence mapping и partial mode.
 - `src/qanorm/stage2a/services`
   - прикладной orchestration слой для UI.
 - `src/qanorm/stage2a/ui`
@@ -255,8 +255,8 @@ Retrieval должен быть гибридным:
 
 ### Шаг 4. Собрать agent runtime
 
-- реализовать `ControllerAgent`;
-- реализовать `ReAct-lite` loop;
+- реализовать DSPy-based `ControllerAgent`;
+- реализовать DSPy `ReAct-lite` loop;
 - реализовать stop conditions;
 - реализовать partial mode policy.
 
@@ -266,8 +266,8 @@ Retrieval должен быть гибридным:
 
 ### Шаг 5. Собрать answer layer
 
-- реализовать `Composer`;
-- реализовать `GroundingVerifier`;
+- реализовать DSPy-based `Composer`;
+- реализовать DSPy-based `GroundingVerifier`;
 - реализовать answer/evidence DTO;
 - реализовать потоковую выдачу ответа.
 
@@ -312,7 +312,8 @@ Retrieval должен быть гибридным:
 - ответы строятся только по локальному evidence;
 - unsupported claims отсекаются;
 - retrieval использует `retrieval_units`, а не dense embeddings на всех `document_nodes`;
-- провайдер моделей изолирован и не протекает в ядро.
+- DSPy layer изолирован от retrieval engine;
+- провайдер моделей изолирован и не протекает в retrieval core.
 
 ---
 
@@ -355,5 +356,5 @@ Retrieval должен быть гибридным:
 - open web / trusted sources;
 - внешний API;
 - альтернативные провайдеры;
-- DSPy или другой framework поверх уже работающего custom-core;
+- DSPy `compile`, optimizers и systematic optimization поверх готового eval-набора;
 - улучшение parser Stage 1 и более умную сегментацию документа.

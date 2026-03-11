@@ -6,7 +6,7 @@
 
 - `Stage 1` реализован и используется как базовый слой данных;
 - старый Stage 2 удален;
-- следующий шаг проекта: собрать быстрый `Stage 2A MVP` на `Custom-core`.
+- следующий шаг проекта: собрать быстрый `Stage 2A MVP` в формате `DSPy-hybrid`.
 
 ## Stage 1
 
@@ -52,18 +52,20 @@
 - [ ] Реализовать context builder и compact evidence pack.
 - [ ] Добавить unit/integration tests на retrieval engine.
 
-### Блок D. Provider layer и contracts
+### Блок D. DSPy layer, provider layer и contracts
 
 - [ ] Добавить Pydantic-схемы запросов, observations, evidence и answer DTO.
-- [ ] Добавить capability-based provider interfaces.
-- [ ] Реализовать Gemini REST adapter через `httpx`.
+- [ ] Добавить DSPy bootstrap для `ControllerAgent`, `Composer`, `GroundingVerifier`.
+- [ ] Добавить provider abstraction и конфигурацию модельного bootstrap.
+- [ ] Реализовать Gemini-конфигурацию для DSPy runtime.
 - [ ] Добавить retries, timeouts и обработку ошибок провайдера.
-- [ ] Добавить `respx`-тесты на provider adapter.
+- [ ] Добавить тесты на DSPy/provider bootstrap.
 
 ### Блок E. Agent runtime
 
-- [ ] Реализовать `ControllerAgent`.
-- [ ] Реализовать `ReAct-lite` loop с ограничением по шагам.
+- [ ] Реализовать DSPy-based `ControllerAgent`.
+- [ ] Реализовать DSPy `ReAct-lite` loop с ограничением по шагам.
+- [ ] Подключить кастомные retrieval tools к DSPy runtime.
 - [ ] Реализовать policy выбора retrieval tools.
 - [ ] Реализовать stop conditions и corrective iteration policy.
 - [ ] Реализовать переход в partial mode при слабом evidence.
@@ -71,8 +73,8 @@
 
 ### Блок F. Answer layer
 
-- [ ] Реализовать `Composer`.
-- [ ] Реализовать `GroundingVerifier`.
+- [ ] Реализовать DSPy-based `Composer`.
+- [ ] Реализовать DSPy-based `GroundingVerifier`.
 - [ ] Реализовать claim-to-evidence mapping.
 - [ ] Реализовать фильтрацию unsupported statements.
 - [ ] Реализовать финальный answer model с citations и ограничениями ответа.
@@ -93,6 +95,7 @@
 - [ ] Разбить eval-набор на explicit document, explicit locator, no explicit norm и ambiguous scenarios.
 - [ ] Реализовать прогон eval-набора и сбор метрик качества.
 - [ ] Зафиксировать `document hit@3`, `locator hit@5`, `grounded answer rate`, `unsupported claim rate`, `partial answer rate`.
+- [ ] Зафиксировать eval-набор как основу для следующей итерации DSPy optimization.
 - [ ] Исправить критические провалы по результатам eval.
 - [ ] Подготовить краткий MVP readiness report.
 
@@ -101,8 +104,8 @@
 - Блок `A` покрывает подготовку Stage 1 под Stage 2A.
 - Блок `B` покрывает построение derived retrieval data.
 - Блок `C` покрывает retrieval engine.
-- Блок `D` покрывает provider abstraction и contracts.
-- Блок `E` покрывает `ReAct-lite` runtime.
-- Блок `F` покрывает answer layer.
+- Блок `D` покрывает DSPy/provider bootstrap и contracts.
+- Блок `E` покрывает DSPy `ReAct-lite` runtime.
+- Блок `F` покрывает DSPy answer layer.
 - Блок `G` покрывает `Streamlit` MVP.
 - Блок `H` покрывает приемку и оценку качества.
