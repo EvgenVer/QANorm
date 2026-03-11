@@ -64,3 +64,4 @@ class DocumentVersion(Base):
     raw_artifacts: Mapped[list["RawArtifact"]] = relationship("RawArtifact", back_populates="document_version", cascade="all, delete-orphan")
     nodes: Mapped[list["DocumentNode"]] = relationship("DocumentNode", back_populates="document_version", cascade="all, delete-orphan")
     references: Mapped[list["DocumentReference"]] = relationship("DocumentReference", back_populates="document_version", cascade="all, delete-orphan")
+    retrieval_units: Mapped[list["RetrievalUnit"]] = relationship("RetrievalUnit", back_populates="document_version", cascade="all, delete-orphan")

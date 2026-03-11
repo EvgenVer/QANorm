@@ -21,12 +21,12 @@
 
 ### Блок A. Подготовка Stage 1 под retrieval
 
-- [ ] Добавить миграцию для таблицы `document_aliases`.
-- [ ] Добавить миграцию для полей `document_nodes.locator_raw`, `document_nodes.locator_normalized`, `document_nodes.heading_path`.
-- [ ] Добавить индекс по `document_nodes.locator_normalized`.
-- [ ] Добавить миграцию для таблицы `retrieval_units`.
-- [ ] Добавить ORM-модели и репозитории для `document_aliases` и `retrieval_units`.
-- [ ] Добавить тесты на миграции и базовые CRUD-операции новых сущностей.
+- [x] Добавить миграцию для таблицы `document_aliases`.
+- [x] Добавить миграцию для полей `document_nodes.locator_raw`, `document_nodes.locator_normalized`, `document_nodes.heading_path`.
+- [x] Добавить индекс по `document_nodes.locator_normalized`.
+- [x] Добавить миграцию для таблицы `retrieval_units`.
+- [x] Добавить ORM-модели и репозитории для `document_aliases` и `retrieval_units`.
+- [x] Добавить тесты на миграции и базовые CRUD-операции новых сущностей.
 
 ### Блок B. Derived retrieval data
 

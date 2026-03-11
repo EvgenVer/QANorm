@@ -66,11 +66,22 @@ def test_fetcher_logs_http_status_errors(caplog: pytest.LogCaptureFixture) -> No
         return httpx.Response(503, text="unavailable", request=request)
 
     fetcher = HttpFetcher(transport=httpx.MockTransport(handler))
+    logger = logging.getLogger("qanorm.fetchers.http")
+    original_level = logger.level
+    original_propagate = logger.propagate
+    original_disabled = logger.disabled
+    logger.addHandler(caplog.handler)
+    logger.setLevel(logging.WARNING)
+    logger.propagate = False
+    logger.disabled = False
     try:
-        with caplog.at_level(logging.WARNING):
-            with pytest.raises(httpx.HTTPStatusError):
-                fetcher.get_html("https://example.test/unavailable")
+        with pytest.raises(httpx.HTTPStatusError):
+            fetcher.get_html("https://example.test/unavailable")
     finally:
+        logger.removeHandler(caplog.handler)
+        logger.setLevel(original_level)
+        logger.propagate = original_propagate
+        logger.disabled = original_disabled
         fetcher.close()
 
     assert "HTTP status error while fetching" in caplog.text

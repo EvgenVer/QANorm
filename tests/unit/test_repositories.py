@@ -5,8 +5,9 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 from qanorm.db.types import ArtifactType, JobStatus
-from qanorm.models import Document, DocumentNode, DocumentSource, DocumentVersion, IngestionJob, RawArtifact, UpdateEvent
+from qanorm.models import Document, DocumentAlias, DocumentNode, DocumentSource, DocumentVersion, IngestionJob, RawArtifact, RetrievalUnit, UpdateEvent
 from qanorm.repositories import (
+    DocumentAliasRepository,
     DocumentNodeRepository,
     DocumentReferenceRepository,
     DocumentRepository,
@@ -14,6 +15,7 @@ from qanorm.repositories import (
     DocumentVersionRepository,
     IngestionJobRepository,
     RawArtifactRepository,
+    RetrievalUnitRepository,
     UpdateEventRepository,
 )
 
@@ -78,6 +80,34 @@ def test_document_node_repository_list_for_document_version_uses_ordered_query()
     session.execute.assert_called_once()
 
 
+def test_document_alias_repository_add_many_flushes_session() -> None:
+    session = _mock_session()
+    document_id = uuid4()
+    aliases = [
+        DocumentAlias(document_id=document_id, alias_raw="SP 20.13330.2016", alias_normalized="sp 20.13330.2016", alias_type="display_code"),
+        DocumentAlias(document_id=document_id, alias_raw="SP 20", alias_normalized="sp 20", alias_type="short_code"),
+    ]
+
+    repository = DocumentAliasRepository(session)
+    result = repository.add_many(aliases)
+
+    assert result == aliases
+    session.add_all.assert_called_once_with(aliases)
+    session.flush.assert_called_once()
+
+
+def test_document_alias_repository_list_by_alias_normalized_uses_lookup_query() -> None:
+    session = _mock_session()
+    expected = [DocumentAlias(document_id=uuid4(), alias_raw="SP 20", alias_normalized="sp 20", alias_type="short_code")]
+    session.execute.return_value.scalars.return_value.all.return_value = expected
+
+    repository = DocumentAliasRepository(session)
+    result = repository.list_by_alias_normalized("sp 20")
+
+    assert result == expected
+    session.execute.assert_called_once()
+
+
 def test_document_reference_repository_add_many_flushes_session() -> None:
     session = _mock_session()
     repository = DocumentReferenceRepository(session)
@@ -86,6 +116,45 @@ def test_document_reference_repository_add_many_flushes_session() -> None:
     assert repository.add_many(references) == []
     session.add_all.assert_called_once_with(references)
     session.flush.assert_called_once()
+
+
+def test_retrieval_unit_repository_add_many_flushes_session() -> None:
+    session = _mock_session()
+    version_id = uuid4()
+    units = [
+        RetrievalUnit(document_version_id=version_id, unit_type="document_card", text="Card summary", chunk_hash="1" * 64),
+        RetrievalUnit(
+            document_version_id=version_id,
+            unit_type="semantic_block",
+            start_order_index=1,
+            end_order_index=2,
+            text="Block text",
+            chunk_hash="2" * 64,
+        ),
+    ]
+
+    repository = RetrievalUnitRepository(session)
+    result = repository.add_many(units)
+
+    assert result == units
+    session.add_all.assert_called_once_with(units)
+    session.flush.assert_called_once()
+
+
+def test_retrieval_unit_repository_lists_units_for_document_version() -> None:
+    session = _mock_session()
+    version_id = uuid4()
+    expected = [
+        RetrievalUnit(document_version_id=version_id, unit_type="semantic_block", start_order_index=1, text="One", chunk_hash="1" * 64),
+        RetrievalUnit(document_version_id=version_id, unit_type="semantic_block", start_order_index=2, text="Two", chunk_hash="2" * 64),
+    ]
+    session.execute.return_value.scalars.return_value.all.return_value = expected
+
+    repository = RetrievalUnitRepository(session)
+    result = repository.list_for_document_version(version_id)
+
+    assert result == expected
+    session.execute.assert_called_once()
 
 
 def test_ingestion_job_repository_claim_next_ready_job_marks_job_running() -> None:

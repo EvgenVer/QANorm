@@ -62,6 +62,11 @@ class Document(Base):
         back_populates="document",
         cascade="all, delete-orphan",
     )
+    aliases: Mapped[list["DocumentAlias"]] = relationship(
+        "DocumentAlias",
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
     update_events: Mapped[list["UpdateEvent"]] = relationship(
         "UpdateEvent",
         back_populates="document",
