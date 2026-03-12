@@ -3,8 +3,8 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from qanorm.db.types import StatusNormalized
-from qanorm.models import Document, DocumentNode, DocumentSource, DocumentVersion
+from qanorm.db.types import EMBEDDING_DIMENSIONS, StatusNormalized
+from qanorm.models import Document, DocumentNode, DocumentSource, DocumentVersion, RetrievalUnit
 from qanorm.repositories import DocumentNodeRepository, DocumentRepository, DocumentSourceRepository, DocumentVersionRepository
 from qanorm.stage2a.indexing.backfill import rebuild_derived_retrieval_data
 from qanorm.stage2a.retrieval import RetrievalEngine
@@ -31,6 +31,7 @@ def test_501_integration_stage2a_retrieval_resolves_document_and_locator() -> No
                 is_active=True,
             )
             version = DocumentVersionRepository(session).add(version)
+            version_id = version.id
             document.current_version_id = version.id
             session.flush()
 
@@ -113,6 +114,7 @@ def test_502_integration_stage2a_retrieval_builds_evidence_pack_without_explicit
                 is_active=True,
             )
             version = DocumentVersionRepository(session).add(version)
+            version_id = version.id
             document.current_version_id = version.id
             session.flush()
 
@@ -162,5 +164,98 @@ def test_502_integration_stage2a_retrieval_builds_evidence_pack_without_explicit
 
             assert evidence
             assert any("армирование" in hit.text.lower() for hit in evidence)
+
+        engine.dispose()
+
+
+def test_503_integration_stage2a_retrieval_uses_dense_hits_when_embeddings_ready() -> None:
+    with _temporary_migrated_database() as database_url:
+        engine = create_engine(database_url, future=True)
+
+        with Session(engine) as session:
+            document = Document(
+                normalized_code="СП 50.13330.2012",
+                display_code="СП 50.13330.2012",
+                title="Тепловая защита зданий",
+                status_normalized=StatusNormalized.ACTIVE,
+            )
+            document = DocumentRepository(session).add(document)
+
+            version = DocumentVersion(
+                document_id=document.id,
+                status_normalized=StatusNormalized.ACTIVE,
+                is_active=True,
+            )
+            version = DocumentVersionRepository(session).add(version)
+            version_id = version.id
+            document.current_version_id = version.id
+            session.flush()
+
+            DocumentSourceRepository(session).add(
+                DocumentSource(
+                    document_id=document.id,
+                    document_version_id=version.id,
+                    card_url="https://docs.example.test/cards/sp-50",
+                )
+            )
+            title_node = DocumentNodeRepository(session).add(
+                DocumentNode(
+                    document_version_id=version.id,
+                    node_type="title",
+                    title=document.title,
+                    text=document.title or "",
+                    order_index=1,
+                )
+            )
+            section_node = DocumentNodeRepository(session).add(
+                DocumentNode(
+                    document_version_id=version.id,
+                    parent_node_id=title_node.id,
+                    node_type="section",
+                    label="5",
+                    title="Теплоизоляция",
+                    text="5 Теплоизоляция",
+                    order_index=2,
+                )
+            )
+            DocumentNodeRepository(session).add(
+                DocumentNode(
+                    document_version_id=version.id,
+                    parent_node_id=section_node.id,
+                    node_type="paragraph",
+                    text="Толщина теплоизоляции наружных стен должна обеспечивать требуемое сопротивление теплопередаче.",
+                    order_index=3,
+                )
+            )
+
+            rebuild_derived_retrieval_data(session)
+            session.commit()
+
+        with Session(engine) as session:
+            semantic_unit = (
+                session.query(RetrievalUnit)
+                .filter(
+                    RetrievalUnit.document_version_id == version_id,
+                    RetrievalUnit.unit_type == "semantic_block",
+                )
+                .one()
+            )
+            semantic_unit.embedding = [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1)
+            session.commit()
+
+        with Session(engine) as session:
+            retrieval = RetrievalEngine(
+                session,
+                query_embedding_fn=lambda _: [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1),
+            )
+            hits = retrieval.search_semantic(
+                "Какая толщина теплоизоляции нужна для наружных стен?",
+                document_version_ids=[version_id],
+                unit_types=["semantic_block"],
+            )
+
+            assert hits
+            assert hits[0].source_kind == "retrieval_unit_dense"
+            assert "теплоизоляции" in hits[0].text.lower()
 
         engine.dispose()

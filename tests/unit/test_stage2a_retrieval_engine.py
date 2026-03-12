@@ -40,6 +40,7 @@ def test_merge_and_rerank_hits_prioritizes_locator_hits() -> None:
     reranked = retrieval.merge_and_rerank_hits(
         locator_hits=[locator_hit],
         lexical_hits=[lexical_hit],
+        dense_hits=[],
         explicit_locator_count=1,
     )
 

@@ -46,13 +46,13 @@
 
 ### Блок C. Retrieval engine
 
-- [ ] Продолжать реализацию retrieval engine по задачам, не зависящим от готовых `embedding`, пока фоновый backfill не завершен.
+- [x] Продолжать реализацию retrieval engine по задачам, не зависящим от готовых `embedding`, пока фоновый backfill не завершен.
 - [x] Реализовать детерминированный parser вопроса.
 - [x] Реализовать `resolve_document` по коду, алиасу и сокращению.
 - [x] Реализовать `discover_documents` для вопросов без явной нормы.
 - [x] Реализовать `lookup_locator`.
 - [x] Реализовать lexical retrieval по `document_nodes` и `retrieval_units`.
-- [ ] Реализовать dense retrieval по `retrieval_units` после готовности фонового backfill `embedding`.
+- [x] Реализовать dense retrieval по `retrieval_units` после готовности фонового backfill `embedding`.
 - [x] Реализовать merge и rerank shortlist.
 - [x] Реализовать `read_node` и `expand_neighbors`.
 - [x] Реализовать context builder и compact evidence pack.

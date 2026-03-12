@@ -159,3 +159,28 @@ class RetrievalUnitRepository:
             .limit(limit)
         )
         return list(self.session.execute(stmt).scalars().all())
+
+    def search_by_vector(
+        self,
+        query_embedding: list[float],
+        *,
+        limit: int,
+        document_version_ids: list[UUID] | None = None,
+        unit_types: list[str] | None = None,
+    ) -> list[tuple[RetrievalUnit, float]]:
+        """Search retrieval units by cosine distance against the stored vector index."""
+
+        stmt = (
+            select(
+                RetrievalUnit,
+                RetrievalUnit.embedding.cosine_distance(query_embedding).label("distance"),
+            )
+            .where(RetrievalUnit.embedding.is_not(None))
+        )
+        if document_version_ids:
+            stmt = stmt.where(RetrievalUnit.document_version_id.in_(document_version_ids))
+        if unit_types:
+            stmt = stmt.where(RetrievalUnit.unit_type.in_(unit_types))
+        stmt = stmt.order_by("distance").limit(limit)
+        rows = self.session.execute(stmt).all()
+        return [(row[0], float(row[1])) for row in rows]

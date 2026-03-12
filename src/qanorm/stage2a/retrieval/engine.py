@@ -1,8 +1,9 @@
-"""Deterministic retrieval engine for Stage 2A lexical workflows."""
+"""Deterministic retrieval engine for Stage 2A hybrid retrieval workflows."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -17,6 +18,7 @@ from qanorm.repositories import (
     RetrievalUnitRepository,
 )
 from qanorm.stage2a.config import get_stage2a_config
+from qanorm.stage2a.indexing.backfill import GeminiEmbeddingClient
 from qanorm.stage2a.retrieval.query_parser import ParsedQuery, QueryParser
 from qanorm.utils.text import normalize_whitespace
 
@@ -51,9 +53,9 @@ class RetrievalHit:
 
 
 class RetrievalEngine:
-    """Hybrid lexical retrieval engine without dense dependencies."""
+    """Hybrid lexical and dense retrieval engine for Stage 2A."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, query_embedding_fn: Callable[[str], list[float]] | None = None) -> None:
         self.session = session
         self.parser = QueryParser()
         self.config = get_stage2a_config()
@@ -62,6 +64,7 @@ class RetrievalEngine:
         self.document_aliases = DocumentAliasRepository(session)
         self.document_nodes = DocumentNodeRepository(session)
         self.retrieval_units = RetrievalUnitRepository(session)
+        self._query_embedding_fn = query_embedding_fn
 
     def parse_query(self, text: str) -> ParsedQuery:
         """Parse one query into deterministic retrieval hints."""
@@ -106,7 +109,14 @@ class RetrievalEngine:
         limit = self.config.retrieval.discover_documents_top_k
         cards = self.retrieval_units.list_all_by_type("document_card")
         if cards:
-            scored_cards = self._rank_retrieval_units(cards, query.lexical_query, source_kind="document_card")
+            lexical_hits = self._rank_retrieval_units(cards, query.lexical_query, source_kind="document_card_lexical")
+            dense_hits = self.search_semantic(query.lexical_query, unit_types=["document_card"])
+            scored_cards = self.merge_and_rerank_hits(
+                locator_hits=[],
+                lexical_hits=lexical_hits,
+                dense_hits=dense_hits,
+                explicit_locator_count=0,
+            )
             candidates: list[DocumentCandidate] = []
             seen: set[UUID] = set()
             for hit in scored_cards:
@@ -207,6 +217,48 @@ class RetrievalEngine:
         hits.sort(key=lambda item: (-item.score, item.order_index or 0))
         return hits[: self.config.retrieval.lexical_top_k]
 
+    def search_semantic(
+        self,
+        query_text: str,
+        *,
+        document_version_ids: list[UUID] | None = None,
+        unit_types: list[str] | None = None,
+    ) -> list[RetrievalHit]:
+        """Run vector retrieval over embedded retrieval units."""
+
+        query_embedding = self._embed_query(query_text)
+        if not query_embedding:
+            return []
+
+        hits: list[RetrievalHit] = []
+        source_kind = "document_card_dense" if unit_types == ["document_card"] else "retrieval_unit_dense"
+        results = self.retrieval_units.search_by_vector(
+            query_embedding,
+            limit=self.config.retrieval.dense_top_k,
+            document_version_ids=document_version_ids,
+            unit_types=unit_types,
+        )
+        for unit, distance in results:
+            document = self._load_document_by_version(unit.document_version_id)
+            if document is None:
+                continue
+            hits.append(
+                RetrievalHit(
+                    source_kind=source_kind,
+                    score=round(max(0.0, 1.0 - distance), 4),
+                    document_id=document.id,
+                    document_version_id=unit.document_version_id,
+                    node_id=unit.anchor_node_id,
+                    retrieval_unit_id=unit.id,
+                    order_index=unit.start_order_index,
+                    locator=unit.locator_primary,
+                    heading_path=unit.heading_path,
+                    text=unit.text,
+                )
+            )
+        hits.sort(key=lambda item: (-item.score, item.order_index or 0))
+        return hits
+
     def read_node(self, node_id: UUID) -> RetrievalHit | None:
         """Read one node as a retrieval hit."""
 
@@ -243,9 +295,15 @@ class RetrievalEngine:
             for locator in parsed.explicit_locator_values:
                 locator_hits.extend(self.lookup_locator(document_version_id=version_id, locator=locator))
         lexical_hits = self.search_lexical(parsed.lexical_query, document_version_ids=version_ids)
+        dense_hits = self.search_semantic(
+            parsed.lexical_query,
+            document_version_ids=version_ids,
+            unit_types=["semantic_block"],
+        )
         reranked = self.merge_and_rerank_hits(
             locator_hits=locator_hits,
             lexical_hits=lexical_hits,
+            dense_hits=dense_hits,
             explicit_locator_count=len(parsed.explicit_locator_values),
         )
         return reranked[: self.config.retrieval.evidence_pack_size]
@@ -255,11 +313,12 @@ class RetrievalEngine:
         *,
         locator_hits: list[RetrievalHit],
         lexical_hits: list[RetrievalHit],
+        dense_hits: list[RetrievalHit] | None = None,
         explicit_locator_count: int,
     ) -> list[RetrievalHit]:
         """Merge hits from different sources and rerank a compact shortlist."""
 
-        merged = _dedupe_hits(locator_hits + lexical_hits)
+        merged = _dedupe_hits(locator_hits + lexical_hits + (dense_hits or []))
         scored: list[tuple[float, int, RetrievalHit]] = []
         for hit in merged[: self.config.retrieval.merged_top_k]:
             rerank_score = hit.score
@@ -267,6 +326,8 @@ class RetrievalEngine:
                 rerank_score += 0.3
             elif hit.source_kind == "retrieval_unit_lexical":
                 rerank_score += 0.08
+            elif hit.source_kind in {"retrieval_unit_dense", "document_card_dense"}:
+                rerank_score += 0.06
             if explicit_locator_count and hit.locator:
                 rerank_score += 0.05
             scored.append((round(rerank_score, 4), hit.order_index or 0, hit))
@@ -361,6 +422,16 @@ class RetrievalEngine:
         if not overlap:
             return 0.0
         return round(len(overlap) / len(query_tokens), 4)
+
+    def _embed_query(self, query_text: str) -> list[float]:
+        if self._query_embedding_fn is not None:
+            return self._query_embedding_fn(query_text)
+
+        try:
+            with GeminiEmbeddingClient(model=self.config.models.embeddings) as client:
+                return client.embed_texts([query_text], task_type=self.config.embeddings.query_task_type)[0]
+        except Exception:
+            return []
 
 
 def _document_fallback_text(document: Document) -> str:
