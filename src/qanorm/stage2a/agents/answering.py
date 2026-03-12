@@ -6,6 +6,8 @@ import json
 from typing import Any, Callable, Literal
 
 import dspy
+import json_repair
+from dspy.utils.exceptions import AdapterParseError
 from pydantic import BaseModel, Field
 
 from qanorm.stage2a.config import Stage2AConfig, get_stage2a_config
@@ -77,30 +79,26 @@ class Composer:
 
         program = self._program_factory()
         evidence_bundle = format_evidence_bundle(evidence)
-        with dspy.context(lm=self.models.composer):
-            prediction = program(
-                query_text=query_text,
+        try:
+            with dspy.context(lm=self.models.composer):
+                prediction = program(
+                    query_text=query_text,
+                    answer_mode=answer_mode,
+                    evidence_bundle=evidence_bundle,
+                )
+        except AdapterParseError as exc:
+            return _compose_from_parse_failure(
+                error=exc,
                 answer_mode=answer_mode,
-                evidence_bundle=evidence_bundle,
+                evidence=evidence,
             )
 
-        answer_text = (getattr(prediction, "answer_text", "") or "").strip()
-        if not answer_text:
-            answer_text = "Недостаточно данных для сформулированного ответа."
-        claims = _normalize_claims(
-            _parse_claims_json(getattr(prediction, "claims_json", ""), available_evidence=evidence),
-            available_evidence=evidence,
-        )
-        if not claims and evidence:
-            claims = [AnswerClaimDTO(text=answer_text, evidence_ids=[item.evidence_id for item in evidence])]
-        limitations = _parse_string_list_json(getattr(prediction, "limitations_json", ""))
-
-        return ComposerResult(
+        return _build_composer_result(
             answer_mode=answer_mode,
-            answer_text=answer_text,
-            claims=claims,
+            answer_text=getattr(prediction, "answer_text", ""),
+            claims_value=getattr(prediction, "claims_json", ""),
+            limitations_value=getattr(prediction, "limitations_json", ""),
             evidence=evidence,
-            limitations=limitations,
         )
 
     def _build_program(self) -> Any:
@@ -127,21 +125,44 @@ class GroundingVerifier:
         program = self._program_factory()
         evidence_bundle = format_evidence_bundle(draft.evidence)
         claims_json = json.dumps([claim.model_dump() for claim in draft.claims], ensure_ascii=False)
-        with dspy.context(lm=self.models.verifier):
-            prediction = program(
-                query_text=query_text,
-                answer_mode=draft.answer_mode,
-                answer_text=draft.answer_text,
-                claims_json=claims_json,
-                evidence_bundle=evidence_bundle,
-            )
+        try:
+            with dspy.context(lm=self.models.verifier):
+                prediction = program(
+                    query_text=query_text,
+                    answer_mode=draft.answer_mode,
+                    answer_text=draft.answer_text,
+                    claims_json=claims_json,
+                    evidence_bundle=evidence_bundle,
+                )
+        except AdapterParseError as exc:
+            return self._verify_from_parse_failure(draft=draft, error=exc)
 
+        return self._build_answer_from_values(
+            draft=draft,
+            verified_answer_value=getattr(prediction, "verified_answer_text", ""),
+            supported_claims_value=getattr(prediction, "supported_claims_json", ""),
+            limitations_value=getattr(prediction, "limitations_json", ""),
+            final_mode_value=getattr(prediction, "final_mode", draft.answer_mode),
+        )
+
+    def _build_program(self) -> Any:
+        return dspy.ChainOfThought(VerifierSignature)
+
+    def _build_answer_from_values(
+        self,
+        *,
+        draft: ComposerResult,
+        verified_answer_value: Any,
+        supported_claims_value: Any,
+        limitations_value: Any,
+        final_mode_value: Any,
+    ) -> Stage2AAnswerDTO:
         supported_claims = _normalize_claims(
-            _parse_claims_json(getattr(prediction, "supported_claims_json", ""), available_evidence=draft.evidence),
+            _parse_claims_json(supported_claims_value, available_evidence=draft.evidence),
             available_evidence=draft.evidence,
         )
         supported_claims = [claim for claim in supported_claims if claim.supported]
-        final_mode = _normalize_answer_mode(getattr(prediction, "final_mode", draft.answer_mode))
+        final_mode = _normalize_answer_mode(str(final_mode_value or draft.answer_mode))
 
         if not supported_claims:
             final_mode = "partial" if draft.evidence else "no_answer"
@@ -157,12 +178,10 @@ class GroundingVerifier:
 
         supported_ids = {evidence_id for claim in supported_claims for evidence_id in claim.evidence_ids}
         filtered_evidence = [item for item in draft.evidence if item.evidence_id in supported_ids]
-        verified_answer_text = (getattr(prediction, "verified_answer_text", "") or "").strip()
+        verified_answer_text = str(verified_answer_value or "").strip()
         if not verified_answer_text:
             verified_answer_text = " ".join(claim.text for claim in supported_claims)
-        limitations = _dedupe_preserve_order(
-            draft.limitations + _parse_string_list_json(getattr(prediction, "limitations_json", ""))
-        )
+        limitations = _dedupe_preserve_order(draft.limitations + _parse_string_list_json(limitations_value))
 
         if final_mode == "direct" and len(filtered_evidence) < self.config.retrieval.min_direct_answer_evidence:
             final_mode = "partial"
@@ -175,8 +194,23 @@ class GroundingVerifier:
             limitations=limitations,
         )
 
-    def _build_program(self) -> Any:
-        return dspy.ChainOfThought(VerifierSignature)
+    def _verify_from_parse_failure(self, *, draft: ComposerResult, error: AdapterParseError) -> Stage2AAnswerDTO:
+        payload = _recover_adapter_payload(error)
+        fallback_claims = draft.claims or _build_default_claims(
+            answer_text=str(payload.get("reasoning") or draft.answer_text or "").strip(),
+            evidence=draft.evidence,
+        )
+        return self._build_answer_from_values(
+            draft=draft,
+            verified_answer_value=payload.get("verified_answer_text") or payload.get("reasoning") or draft.answer_text,
+            supported_claims_value=payload.get("supported_claims_json") or [claim.model_dump() for claim in fallback_claims],
+            limitations_value=_merge_limitations(
+                draft.limitations,
+                _parse_string_list_json(payload.get("limitations_json")),
+                "Ответ был автоматически ограничен: verifier не смог полностью распарсить ответ модели.",
+            ),
+            final_mode_value=payload.get("final_mode") or "partial",
+        )
 
 
 def format_evidence_bundle(evidence: list[EvidenceItemDTO]) -> str:
@@ -193,11 +227,55 @@ def format_evidence_bundle(evidence: list[EvidenceItemDTO]) -> str:
     return "\n".join(lines)
 
 
-def _parse_claims_json(raw_value: str, *, available_evidence: list[EvidenceItemDTO]) -> list[AnswerClaimDTO]:
-    try:
-        payload = json.loads(raw_value)
-    except json.JSONDecodeError:
-        return []
+def _compose_from_parse_failure(
+    *,
+    error: AdapterParseError,
+    answer_mode: Literal["direct", "partial", "clarify", "no_answer"],
+    evidence: list[EvidenceItemDTO],
+) -> ComposerResult:
+    payload = _recover_adapter_payload(error)
+    fallback_mode: Literal["direct", "partial", "clarify", "no_answer"] = "partial" if evidence else "no_answer"
+    return _build_composer_result(
+        answer_mode=fallback_mode if answer_mode == "direct" else answer_mode,
+        answer_text=payload.get("answer_text") or payload.get("reasoning") or "",
+        claims_value=payload.get("claims_json"),
+        limitations_value=_merge_limitations(
+            _parse_string_list_json(payload.get("limitations_json")),
+            "Ответ был автоматически ограничен: composer не смог полностью распарсить ответ модели.",
+        ),
+        evidence=evidence,
+    )
+
+
+def _build_composer_result(
+    *,
+    answer_mode: Literal["direct", "partial", "clarify", "no_answer"],
+    answer_text: Any,
+    claims_value: Any,
+    limitations_value: Any,
+    evidence: list[EvidenceItemDTO],
+) -> ComposerResult:
+    normalized_answer_text = str(answer_text or "").strip()
+    if not normalized_answer_text:
+        normalized_answer_text = "Недостаточно данных для сформулированного ответа."
+    claims = _normalize_claims(
+        _parse_claims_json(claims_value, available_evidence=evidence),
+        available_evidence=evidence,
+    )
+    if not claims and evidence:
+        claims = _build_default_claims(answer_text=normalized_answer_text, evidence=evidence)
+    limitations = _parse_string_list_json(limitations_value)
+    return ComposerResult(
+        answer_mode=answer_mode,
+        answer_text=normalized_answer_text,
+        claims=claims,
+        evidence=evidence,
+        limitations=limitations,
+    )
+
+
+def _parse_claims_json(raw_value: Any, *, available_evidence: list[EvidenceItemDTO]) -> list[AnswerClaimDTO]:
+    payload = _coerce_json_payload(raw_value)
     if not isinstance(payload, list):
         return []
     evidence_ids = {item.evidence_id for item in available_evidence}
@@ -220,11 +298,8 @@ def _parse_claims_json(raw_value: str, *, available_evidence: list[EvidenceItemD
     return claims
 
 
-def _parse_string_list_json(raw_value: str) -> list[str]:
-    try:
-        payload = json.loads(raw_value)
-    except json.JSONDecodeError:
-        return []
+def _parse_string_list_json(raw_value: Any) -> list[str]:
+    payload = _coerce_json_payload(raw_value)
     if not isinstance(payload, list):
         return []
     items: list[str] = []
@@ -273,3 +348,53 @@ def _truncate_text(text: str, *, limit: int = 220) -> str:
     if len(normalized) <= limit:
         return normalized
     return f"{normalized[: limit - 3].rstrip()}..."
+
+
+def _coerce_json_payload(raw_value: Any) -> Any:
+    if isinstance(raw_value, (list, dict)):
+        return raw_value
+    if raw_value is None or not isinstance(raw_value, str):
+        return None
+    try:
+        return json.loads(raw_value)
+    except json.JSONDecodeError:
+        try:
+            return json_repair.loads(raw_value)
+        except Exception:
+            return None
+
+
+def _recover_adapter_payload(error: AdapterParseError) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    parsed_result = getattr(error, "parsed_result", None)
+    if isinstance(parsed_result, dict):
+        payload.update(parsed_result)
+    recovered = _coerce_json_payload(getattr(error, "lm_response", ""))
+    if isinstance(recovered, dict):
+        for key, value in recovered.items():
+            payload.setdefault(key, value)
+    return payload
+
+
+def _build_default_claims(*, answer_text: str, evidence: list[EvidenceItemDTO]) -> list[AnswerClaimDTO]:
+    if not evidence:
+        return []
+    text = answer_text.strip()
+    if not text:
+        return []
+    return [AnswerClaimDTO(text=text, evidence_ids=[item.evidence_id for item in evidence])]
+
+
+def _merge_limitations(*groups: list[str] | str) -> list[str]:
+    merged: list[str] = []
+    for group in groups:
+        if isinstance(group, str):
+            normalized = group.strip()
+            if normalized:
+                merged.append(normalized)
+            continue
+        for value in group:
+            normalized = str(value).strip()
+            if normalized:
+                merged.append(normalized)
+    return merged
