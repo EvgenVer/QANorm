@@ -3,7 +3,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 from uuid import uuid4
 
-from qanorm.stage2a.agents.controller import ControllerAgent
+from dspy.utils.exceptions import AdapterParseError
+
+from qanorm.stage2a.agents.controller import ControllerAgent, ControllerSignature
 from qanorm.stage2a.providers import Stage2ADspyModelBundle
 from qanorm.stage2a.retrieval.engine import DocumentCandidate, RetrievalHit
 from qanorm.stage2a.retrieval.query_parser import ParsedQuery
@@ -200,3 +202,41 @@ def test_controller_agent_retries_and_downgrades_to_partial() -> None:
     assert result.iterations_used == 1
     assert len(result.evidence) == 1
     assert feedback_values[0] == ""
+
+
+def test_controller_agent_salvages_observed_evidence_on_parse_failure() -> None:
+    retrieval = _FakeRetrievalEngine()
+
+    def fake_factory(tools):
+        tool_map = {tool.__name__: tool for tool in tools}
+
+        class _Program:
+            def __call__(self, **kwargs):
+                tool_map["resolve_document"](kwargs["query_text"])
+                tool_map["search_lexical"](kwargs["query_text"], [str(VERSION_ID)])
+                raise AdapterParseError(
+                    adapter_name="JSONAdapter",
+                    signature=ControllerSignature,
+                    lm_response=(
+                        '{"reasoning":"Нашел релевантный СП 63 и lexical evidence, '
+                        'но structured output оборвался до answer_mode."}'
+                    ),
+                    parsed_result={"reasoning": "Нашел релевантный СП 63 и lexical evidence."},
+                )
+
+        return _Program()
+
+    agent = ControllerAgent(
+        retrieval_engine=retrieval,
+        model_bundle=_build_bundle(),
+        react_factory=fake_factory,
+    )
+
+    result = agent.run("Какой максимальный шаг арматуры в плитах по СП63?")
+
+    assert result.answer_mode == "partial"
+    assert result.iterations_used == 1
+    assert result.evidence
+    assert result.selected_evidence_ids == [item.evidence_id for item in result.evidence]
+    assert "controller_parse_error" in result.trajectory
+    assert "СП 63" in result.reasoning_summary

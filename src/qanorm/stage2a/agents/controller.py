@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Callable, Literal
 from uuid import UUID
 
 import dspy
+import json_repair
+from dspy.utils.exceptions import AdapterParseError
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -73,11 +76,20 @@ class ControllerAgent:
         for iteration_index in range(self.config.runtime.max_corrective_iterations + 1):
             toolbox = _ControllerToolbox(self.retrieval)
             program = self._react_factory(toolbox.build_tools())
-            with dspy.context(lm=self.models.controller):
-                prediction = program(
+            try:
+                with dspy.context(lm=self.models.controller):
+                    prediction = program(
+                        query_text=query_text,
+                        policy_hint=policy_hint,
+                        retrieval_feedback=retrieval_feedback,
+                    )
+            except AdapterParseError as exc:
+                return self._build_parse_failure_result(
                     query_text=query_text,
+                    error=exc,
+                    toolbox=toolbox,
                     policy_hint=policy_hint,
-                    retrieval_feedback=retrieval_feedback,
+                    iterations_used=iteration_index + 1,
                 )
 
             result = self._build_result(
@@ -183,6 +195,58 @@ class ControllerAgent:
         if result.evidence:
             return result.model_copy(update={"answer_mode": "partial"})
         return result.model_copy(update={"answer_mode": "no_answer"})
+
+    def _build_parse_failure_result(
+        self,
+        *,
+        query_text: str,
+        error: AdapterParseError,
+        toolbox: "_ControllerToolbox",
+        policy_hint: str,
+        iterations_used: int,
+    ) -> ControllerAgentResult:
+        """Salvage the query from observed evidence when DSPy cannot parse the final controller output."""
+
+        payload = _recover_adapter_payload(error)
+        observed_evidence = toolbox.collect_observed_evidence(limit=self.config.retrieval.evidence_pack_size)
+        evidence_source = "observed_evidence"
+        if not observed_evidence:
+            observed_evidence = self._build_runtime_fallback_evidence(query_text)
+            evidence_source = "runtime_evidence_pack"
+
+        answer_mode = _normalize_answer_mode(str(payload.get("answer_mode") or ""))
+        if observed_evidence and answer_mode in {"no_answer", "clarify", "direct"}:
+            answer_mode = "partial"
+        answer_mode = self._apply_grounding_policy(answer_mode, observed_evidence)
+
+        reasoning_summary = _truncate_text(
+            str(payload.get("reasoning_summary") or payload.get("reasoning") or "").strip()
+            or "Контроллер не смог распарсить structured output и вернул fallback по найденному evidence.",
+            limit=500,
+        )
+        return ControllerAgentResult(
+            query_text=query_text,
+            answer_mode=answer_mode,
+            reasoning_summary=reasoning_summary,
+            selected_evidence_ids=[item.evidence_id for item in observed_evidence],
+            evidence=observed_evidence,
+            trajectory={
+                "controller_parse_error": str(error),
+                "controller_fallback": evidence_source,
+            },
+            policy_hint=policy_hint,
+            iterations_used=iterations_used,
+        )
+
+    def _build_runtime_fallback_evidence(self, query_text: str) -> list[EvidenceItemDTO]:
+        """Build a deterministic retrieval bundle when the controller selected nothing usable."""
+
+        if not hasattr(self.retrieval, "build_evidence_pack"):
+            return []
+        return [
+            EvidenceItemDTO.from_hit(hit, evidence_id=f"ev-fallback-{index:02d}")
+            for index, hit in enumerate(self.retrieval.build_evidence_pack(query_text), start=1)
+        ]
 
 
 class _ControllerToolbox:
@@ -398,3 +462,29 @@ def _format_citation(item: EvidenceItemDTO) -> str:
     if item.heading_path:
         parts.append(item.heading_path)
     return " | ".join(parts) if parts else "-"
+
+
+def _coerce_json_payload(raw_value: Any) -> Any:
+    if isinstance(raw_value, (dict, list)):
+        return raw_value
+    if raw_value is None or not isinstance(raw_value, str):
+        return None
+    try:
+        return json.loads(raw_value)
+    except json.JSONDecodeError:
+        try:
+            return json_repair.loads(raw_value)
+        except Exception:
+            return None
+
+
+def _recover_adapter_payload(error: AdapterParseError) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    parsed_result = getattr(error, "parsed_result", None)
+    if isinstance(parsed_result, dict):
+        payload.update(parsed_result)
+    recovered = _coerce_json_payload(getattr(error, "lm_response", ""))
+    if isinstance(recovered, dict):
+        for key, value in recovered.items():
+            payload.setdefault(key, value)
+    return payload
