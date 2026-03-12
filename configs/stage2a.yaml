@@ -34,8 +34,8 @@ stage2a:
     controller_temperature: 0.1
     composer_temperature: 0.2
     verifier_temperature: 0.0
-    max_answer_tokens: 3000
-    max_verifier_tokens: 1500
+    max_answer_tokens: 4096
+    max_verifier_tokens: 2048
 
   # Retrieval units should be materially larger than document_nodes.
   indexing:

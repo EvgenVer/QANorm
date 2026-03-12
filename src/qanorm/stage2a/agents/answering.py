@@ -102,7 +102,7 @@ class Composer:
         )
 
     def _build_program(self) -> Any:
-        return dspy.ChainOfThought(ComposerSignature)
+        return dspy.Predict(ComposerSignature)
 
 
 class GroundingVerifier:
@@ -146,7 +146,7 @@ class GroundingVerifier:
         )
 
     def _build_program(self) -> Any:
-        return dspy.ChainOfThought(VerifierSignature)
+        return dspy.Predict(VerifierSignature)
 
     def _build_answer_from_values(
         self,
