@@ -51,10 +51,10 @@ stage2a:
     document_shortlist_size: 6
     lexical_top_k: 30
     dense_top_k: 30
-    merged_top_k: 24
-    rerank_top_k: 12
-    evidence_pack_size: 6
-    neighbor_window: 1
+    merged_top_k: 36
+    rerank_top_k: 16
+    evidence_pack_size: 8
+    neighbor_window: 2
     min_direct_answer_evidence: 2
     enable_partial_answer_on_low_confidence: true
 

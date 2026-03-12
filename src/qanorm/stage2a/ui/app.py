@@ -86,8 +86,7 @@ def _render_result_panels(result_payload: Stage2AQueryResult | dict) -> None:
         for item in answer["evidence"]:
             st.markdown(
                 f"**{item['evidence_id']}**  \n"
-                f"Локатор: `{item['locator'] or '-'}`  \n"
-                f"Заголовок: `{item['heading_path'] or '-'}`  \n"
+                f"Citation: `{_format_ui_citation(item)}`  \n"
                 f"Источник: `{item['source_kind']}`  \n"
                 f"Текст: {item['text']}"
             )
@@ -105,6 +104,17 @@ def _render_result_panels(result_payload: Stage2AQueryResult | dict) -> None:
             st.write(f"Selected evidence ids: {', '.join(controller['selected_evidence_ids']) or '-'}")
             for entry in answer["debug_trace"]:
                 st.code(entry)
+
+
+def _format_ui_citation(item: dict) -> str:
+    parts: list[str] = []
+    if item.get("document_display_code"):
+        parts.append(str(item["document_display_code"]))
+    if item.get("locator"):
+        parts.append(f"п. {item['locator']}")
+    if item.get("heading_path"):
+        parts.append(str(item["heading_path"]))
+    return " | ".join(parts) if parts else "-"
 
 
 if __name__ == "__main__":

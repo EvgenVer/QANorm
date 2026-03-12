@@ -50,6 +50,8 @@ class RetrievalHit:
     locator: str | None
     heading_path: str | None
     text: str
+    document_display_code: str | None = None
+    document_title: str | None = None
 
 
 class RetrievalEngine:
@@ -127,7 +129,7 @@ class RetrievalEngine:
                     self._build_document_candidate(
                         document,
                         score=hit.score,
-                        reason="document_card_lexical",
+                        reason=hit.source_kind,
                         matched_value=hit.heading_path or hit.locator,
                     )
                 )
@@ -180,6 +182,8 @@ class RetrievalEngine:
                     score=0.98,
                     document_id=document.id,
                     document_version_id=document_version_id,
+                    document_display_code=document.display_code,
+                    document_title=document.title,
                     node_id=unit.anchor_node_id,
                     retrieval_unit_id=unit.id,
                     order_index=unit.start_order_index,
@@ -248,6 +252,8 @@ class RetrievalEngine:
                     score=round(max(0.0, 1.0 - distance), 4),
                     document_id=document.id,
                     document_version_id=unit.document_version_id,
+                    document_display_code=document.display_code,
+                    document_title=document.title,
                     node_id=unit.anchor_node_id,
                     retrieval_unit_id=unit.id,
                     order_index=unit.start_order_index,
@@ -306,7 +312,8 @@ class RetrievalEngine:
             dense_hits=dense_hits,
             explicit_locator_count=len(parsed.explicit_locator_values),
         )
-        return reranked[: self.config.retrieval.evidence_pack_size]
+        contextual_hits = self._augment_hits_with_local_context(reranked)
+        return contextual_hits[: self.config.retrieval.evidence_pack_size]
 
     def merge_and_rerank_hits(
         self,
@@ -375,6 +382,8 @@ class RetrievalEngine:
                     score=score,
                     document_id=document.id,
                     document_version_id=unit.document_version_id,
+                    document_display_code=document.display_code,
+                    document_title=document.title,
                     node_id=unit.anchor_node_id,
                     retrieval_unit_id=unit.id,
                     order_index=unit.start_order_index,
@@ -405,6 +414,8 @@ class RetrievalEngine:
             score=score,
             document_id=document.id,
             document_version_id=node.document_version_id,
+            document_display_code=document.display_code,
+            document_title=document.title,
             node_id=node.id,
             retrieval_unit_id=None,
             order_index=node.order_index,
@@ -432,6 +443,24 @@ class RetrievalEngine:
                 return client.embed_texts([query_text], task_type=self.config.embeddings.query_task_type)[0]
         except Exception:
             return []
+
+    def _augment_hits_with_local_context(self, hits: list[RetrievalHit]) -> list[RetrievalHit]:
+        """Expand top node hits with nearby structural context before composing the evidence pack."""
+
+        contextual_hits = list(hits)
+        top_expandable = [
+            hit
+            for hit in hits[: max(1, min(4, self.config.retrieval.evidence_pack_size))]
+            if hit.node_id is not None
+        ]
+        for hit in top_expandable:
+            contextual_hits.extend(
+                self.expand_neighbors(
+                    document_version_id=hit.document_version_id,
+                    node_id=hit.node_id,
+                )
+            )
+        return _dedupe_hits(contextual_hits)
 
 
 def _document_fallback_text(document: Document) -> str:

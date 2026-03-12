@@ -438,3 +438,23 @@ def test_read_embedding_backfill_state_aggregates_parallel_manifest(tmp_path: Pa
     assert aggregated["worker_count"] == 2
     assert aggregated["processed_units"] == 260
     assert aggregated["remaining_units"] == 1720
+
+
+def test_build_document_alias_drafts_generates_compact_code_variants() -> None:
+    document = Document(
+        id=uuid4(),
+        normalized_code="SP 63.13330.2018",
+        display_code="SP 63.13330.2018",
+        title="Concrete structures",
+    )
+
+    aliases = build_document_alias_drafts(document, sources=[])
+    alias_values = {alias.alias_normalized for alias in aliases}
+
+    assert "sp63.13330.2018" in alias_values
+    assert "sp63.13330" in alias_values
+    assert "sp63" in alias_values
+
+
+def test_normalize_alias_value_keeps_compact_codes() -> None:
+    assert normalize_alias_value("SP63") == "sp63"

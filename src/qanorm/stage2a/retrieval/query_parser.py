@@ -12,7 +12,7 @@ from qanorm.utils.text import normalize_whitespace
 
 
 _DOCUMENT_CODE_RE = re.compile(
-    r"\b(?:СП|СНиП|ГОСТ|SP|SNIP|GOST)\s*[A-Za-zА-Яа-я0-9][A-Za-zА-Яа-я0-9.\-\/]*",
+    r"\b(?:СП|СНиП|СНИП|ГОСТ|SP|SNIP|GOST)\s*[A-Za-zА-Яа-я0-9][A-Za-zА-Яа-я0-9.\-/]*",
     re.IGNORECASE,
 )
 _NUMERIC_LOCATOR_RE = re.compile(
@@ -21,6 +21,10 @@ _NUMERIC_LOCATOR_RE = re.compile(
 )
 _APPENDIX_LOCATOR_RE = re.compile(
     r"\b(?:прил\.?|приложение|appendix)\s*[A-Za-zА-Яа-я]\b",
+    re.IGNORECASE,
+)
+_COMPACT_PREFIX_RE = re.compile(
+    r"\b(СП|СНиП|СНИП|ГОСТ|SP|SNIP|GOST)(\d)",
     re.IGNORECASE,
 )
 
@@ -43,7 +47,7 @@ class QueryParser:
     def parse(self, text: str) -> ParsedQuery:
         """Parse one query into deterministic retrieval hints."""
 
-        normalized_text = normalize_whitespace(text)
+        normalized_text = _expand_compact_document_prefixes(normalize_whitespace(text))
         if not normalized_text:
             return ParsedQuery(
                 raw_text=text,
@@ -62,7 +66,10 @@ class QueryParser:
             normalized
             for normalized in (
                 normalize_locator_value(match.group(0))
-                for match in list(_NUMERIC_LOCATOR_RE.finditer(normalized_text)) + list(_APPENDIX_LOCATOR_RE.finditer(normalized_text))
+                for match in (
+                    list(_NUMERIC_LOCATOR_RE.finditer(normalized_text))
+                    + list(_APPENDIX_LOCATOR_RE.finditer(normalized_text))
+                )
             )
             if normalized is not None
         )
@@ -76,6 +83,12 @@ class QueryParser:
             lexical_query=" ".join(lexical_tokens),
             lexical_tokens=lexical_tokens,
         )
+
+
+def _expand_compact_document_prefixes(text: str) -> str:
+    """Insert a missing space between a known document prefix and its numeric code."""
+
+    return _COMPACT_PREFIX_RE.sub(r"\1 \2", text)
 
 
 def _dedupe_preserve_order(values) -> list[str]:

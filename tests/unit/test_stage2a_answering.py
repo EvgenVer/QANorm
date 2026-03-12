@@ -156,7 +156,7 @@ def test_grounding_verifier_returns_no_answer_when_no_supported_claims() -> None
 
     assert answer.mode == "partial"
     assert answer.claims == []
-    assert answer.evidence == []
+    assert len(answer.evidence) == 1
     assert "claims" in answer.limitations[0]
 
 

@@ -115,6 +115,10 @@ class ControllerAgent:
     ) -> ControllerAgentResult:
         selected_evidence_ids = _parse_evidence_ids(getattr(prediction, "selected_evidence_ids", ""))
         evidence = toolbox.collect_selected_evidence(selected_evidence_ids)
+        if not evidence:
+            evidence = toolbox.collect_observed_evidence(limit=self.config.retrieval.evidence_pack_size)
+            if evidence and not selected_evidence_ids:
+                selected_evidence_ids = [item.evidence_id for item in evidence]
         answer_mode = _normalize_answer_mode(getattr(prediction, "answer_mode", "no_answer"))
         answer_mode = self._apply_grounding_policy(answer_mode, evidence)
         reasoning_summary = (getattr(prediction, "reasoning_summary", "") or "").strip() or "Контроллер не вернул краткое резюме."
@@ -213,6 +217,20 @@ class _ControllerToolbox:
                 continue
             selected.append(evidence)
         return selected
+
+    def collect_observed_evidence(self, *, limit: int) -> list[EvidenceItemDTO]:
+        """Return the strongest observed evidence when the model fails to name evidence ids explicitly."""
+
+        by_id = {item.evidence_id: item for item in self._evidence_by_key.values()}
+        ordered: list[EvidenceItemDTO] = []
+        for evidence_id in self._evidence_order:
+            evidence = by_id.get(evidence_id)
+            if evidence is None:
+                continue
+            ordered.append(evidence)
+            if len(ordered) >= limit:
+                break
+        return ordered
 
     def resolve_document(self, query_text: str) -> str:
         """Resolve explicit document references from the query."""
@@ -349,10 +367,9 @@ def _format_evidence_observation(tool_name: str, evidence: list[EvidenceItemDTO]
         lines.append(
             " - "
             f"{item.evidence_id} | "
+            f"citation={_format_citation(item)} | "
             f"document_version_id={item.document_version_id} | "
             f"node_id={item.node_id} | "
-            f"locator={item.locator or '-'} | "
-            f"heading={item.heading_path or '-'} | "
             f"score={item.score:.2f} | "
             f"text={_truncate_text(item.text)}"
         )
@@ -365,8 +382,19 @@ def _hit_identity(hit: RetrievalHit) -> tuple[str, str]:
     return secondary, primary
 
 
-def _truncate_text(text: str, *, limit: int = 220) -> str:
+def _truncate_text(text: str, *, limit: int = 700) -> str:
     normalized = " ".join(text.split())
     if len(normalized) <= limit:
         return normalized
     return f"{normalized[: limit - 3].rstrip()}..."
+
+
+def _format_citation(item: EvidenceItemDTO) -> str:
+    parts: list[str] = []
+    if item.document_display_code:
+        parts.append(item.document_display_code)
+    if item.locator:
+        parts.append(f"п. {item.locator}")
+    if item.heading_path:
+        parts.append(item.heading_path)
+    return " | ".join(parts) if parts else "-"

@@ -11,5 +11,5 @@ def test_stage2a_config_loads_all_runtime_sections() -> None:
     assert config.runtime.max_tool_steps == 5
     assert config.runtime.retry_attempts == 4
     assert config.generation.controller_temperature == 0.1
-    assert config.retrieval.evidence_pack_size == 6
+    assert config.retrieval.evidence_pack_size == 8
     assert config.ui.port == 8501

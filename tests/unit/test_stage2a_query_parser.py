@@ -20,3 +20,12 @@ def test_query_parser_extracts_appendix_locator() -> None:
 
     assert parsed.explicit_document_codes == ["ГОСТ 27751-2014"]
     assert parsed.explicit_locator_values == ["а"]
+
+
+def test_query_parser_expands_compact_document_prefixes() -> None:
+    parser = QueryParser()
+
+    parsed = parser.parse("Что требует СП63 по п. 5.1?")
+
+    assert parsed.explicit_document_codes == ["СП 63"]
+    assert parsed.explicit_locator_values == ["5.1"]

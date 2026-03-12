@@ -143,8 +143,10 @@ def _derive_code_aliases(code: str | None) -> list[str]:
     prefix, rest = parts[0], parts[1]
     for prefix_variant in _PREFIX_VARIANTS.get(prefix.upper(), (prefix,)):
         aliases.add(f"{prefix_variant} {rest}")
+        aliases.add(f"{prefix_variant}{rest}")
         for shortened_rest in _derive_shortened_code_variants(rest):
             aliases.add(f"{prefix_variant} {shortened_rest}")
+            aliases.add(f"{prefix_variant}{shortened_rest}")
     return sorted(aliases)
 
 

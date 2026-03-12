@@ -197,7 +197,6 @@ def test_controller_agent_retries_and_downgrades_to_partial() -> None:
     result = agent.run("Какая нагрузка на кровлю?")
 
     assert result.answer_mode == "partial"
-    assert result.iterations_used == 2
+    assert result.iterations_used == 1
     assert len(result.evidence) == 1
     assert feedback_values[0] == ""
-    assert "No valid evidence ids were selected" in feedback_values[1]

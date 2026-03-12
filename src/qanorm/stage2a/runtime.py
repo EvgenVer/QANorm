@@ -10,9 +10,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from qanorm.db.session import create_session_factory
 from qanorm.stage2a.agents import Composer, ControllerAgent, ControllerAgentResult, GroundingVerifier
 from qanorm.stage2a.config import Stage2AConfig, get_stage2a_config
-from qanorm.stage2a.contracts import Stage2AAnswerDTO
+from qanorm.stage2a.contracts import EvidenceItemDTO, Stage2AAnswerDTO
 from qanorm.stage2a.providers import Stage2ADspyModelBundle, build_stage2a_dspy_models
-from qanorm.stage2a.retrieval.engine import RetrievalEngine
+from qanorm.stage2a.retrieval.engine import RetrievalEngine, RetrievalHit
 
 
 class Stage2AQueryResult(BaseModel):
@@ -54,6 +54,23 @@ class Stage2ARuntime:
                 model_bundle=self.model_bundle,
             )
             controller_result = _coerce_controller_result(controller.run(query_text))
+            if not controller_result.evidence and hasattr(retrieval, "build_evidence_pack"):
+                fallback_evidence = [
+                    retrieval_hit_to_evidence(hit, index)
+                    for index, hit in enumerate(retrieval.build_evidence_pack(query_text), start=1)
+                ]
+                if fallback_evidence:
+                    controller_result = controller_result.model_copy(
+                        update={
+                            "answer_mode": "partial" if controller_result.answer_mode == "no_answer" else controller_result.answer_mode,
+                            "selected_evidence_ids": [item.evidence_id for item in fallback_evidence],
+                            "evidence": fallback_evidence,
+                            "reasoning_summary": (
+                                f"{controller_result.reasoning_summary} "
+                                "Runtime fallback used the deterministic evidence pack."
+                            ).strip(),
+                        }
+                    )
 
             if not controller_result.evidence:
                 answer = Stage2AAnswerDTO(
@@ -101,3 +118,7 @@ def _coerce_controller_result(value: ControllerAgentResult | object) -> Controll
     if hasattr(value, "__dict__"):
         return ControllerAgentResult.model_validate(value.__dict__)
     return ControllerAgentResult.model_validate(value)
+
+
+def retrieval_hit_to_evidence(hit: RetrievalHit, index: int) -> EvidenceItemDTO:
+    return EvidenceItemDTO.from_hit(hit, evidence_id=f"ev-fallback-{index:02d}")

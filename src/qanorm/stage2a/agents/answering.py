@@ -167,12 +167,12 @@ class GroundingVerifier:
         if not supported_claims:
             final_mode = "partial" if draft.evidence else "no_answer"
             limitations = draft.limitations + ["Ответ был автоматически ограничен: подтвержденные claims не найдены."]
-            verified_answer_text = "Недостаточно подтвержденных данных для уверенного ответа."
+            verified_answer_text = draft.answer_text if draft.evidence else "Недостаточно подтвержденных данных для уверенного ответа."
             return Stage2AAnswerDTO(
                 mode=final_mode,
                 answer_text=verified_answer_text,
                 claims=[],
-                evidence=[],
+                evidence=draft.evidence if draft.evidence else [],
                 limitations=_dedupe_preserve_order(limitations),
             )
 
@@ -221,7 +221,7 @@ def format_evidence_bundle(evidence: list[EvidenceItemDTO]) -> str:
     lines: list[str] = []
     for item in evidence:
         lines.append(
-            f"{item.evidence_id} | locator={item.locator or '-'} | heading={item.heading_path or '-'} | "
+            f"{item.evidence_id} | citation={_format_citation(item)} | "
             f"source={item.source_kind} | text={_truncate_text(item.text)}"
         )
     return "\n".join(lines)
@@ -343,11 +343,22 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
     return ordered
 
 
-def _truncate_text(text: str, *, limit: int = 220) -> str:
+def _truncate_text(text: str, *, limit: int = 900) -> str:
     normalized = " ".join(text.split())
     if len(normalized) <= limit:
         return normalized
     return f"{normalized[: limit - 3].rstrip()}..."
+
+
+def _format_citation(item: EvidenceItemDTO) -> str:
+    parts: list[str] = []
+    if item.document_display_code:
+        parts.append(item.document_display_code)
+    if item.locator:
+        parts.append(f"п. {item.locator}")
+    if item.heading_path:
+        parts.append(item.heading_path)
+    return " | ".join(parts) if parts else "-"
 
 
 def _coerce_json_payload(raw_value: Any) -> Any:

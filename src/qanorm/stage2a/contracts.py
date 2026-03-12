@@ -50,6 +50,8 @@ class RetrievalHitDTO(BaseModel):
     score: float = Field(ge=0.0)
     document_id: UUID
     document_version_id: UUID
+    document_display_code: str | None = None
+    document_title: str | None = None
     node_id: UUID | None = None
     retrieval_unit_id: UUID | None = None
     order_index: int | None = None
@@ -66,6 +68,8 @@ class RetrievalHitDTO(BaseModel):
             score=hit.score,
             document_id=hit.document_id,
             document_version_id=hit.document_version_id,
+            document_display_code=hit.document_display_code,
+            document_title=hit.document_title,
             node_id=hit.node_id,
             retrieval_unit_id=hit.retrieval_unit_id,
             order_index=hit.order_index,
@@ -92,6 +96,8 @@ class EvidenceItemDTO(BaseModel):
     source_kind: str = Field(min_length=1)
     document_id: UUID
     document_version_id: UUID
+    document_display_code: str | None = None
+    document_title: str | None = None
     node_id: UUID | None = None
     retrieval_unit_id: UUID | None = None
     locator: str | None = None
@@ -108,6 +114,8 @@ class EvidenceItemDTO(BaseModel):
             source_kind=hit.source_kind,
             document_id=hit.document_id,
             document_version_id=hit.document_version_id,
+            document_display_code=hit.document_display_code,
+            document_title=hit.document_title,
             node_id=hit.node_id,
             retrieval_unit_id=hit.retrieval_unit_id,
             locator=hit.locator,
