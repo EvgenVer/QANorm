@@ -81,7 +81,7 @@ def test_runtime_runs_full_answer_flow(monkeypatch) -> None:
         def run(self, query_text: str):
             return SimpleNamespace(
                 query_text=query_text,
-                answer_mode="partial",
+                answer_mode="direct",
                 reasoning_summary="One supported fragment was found.",
                 selected_evidence_ids=["ev-0001"],
                 evidence=evidence,
@@ -187,26 +187,12 @@ def test_runtime_uses_fallback_evidence_pack_when_controller_selected_none(monke
                 limitations=["Fallback path used."],
             )
 
-    class _FakeVerifier:
-        def __init__(self, **kwargs) -> None:
-            self.kwargs = kwargs
-
-        def verify(self, **kwargs):
-            draft = kwargs["draft"]
-            return Stage2AAnswerDTO(
-                mode="partial",
-                answer_text=draft.answer_text,
-                claims=draft.claims,
-                evidence=draft.evidence,
-                limitations=draft.limitations,
-            )
-
     runtime = Stage2ARuntime(
         session_factory=_FakeSessionFactory(),
         model_bundle=SimpleNamespace(controller=object(), composer=object(), verifier=object(), reranker=object(), provider_name="gemini"),
         controller_factory=_FakeController,
         composer_factory=_FakeComposer,
-        verifier_factory=_FakeVerifier,
+        verifier_factory=lambda **kwargs: (_ for _ in ()).throw(AssertionError("verifier must be skipped for partial answers")),
     )
 
     monkeypatch.setattr("qanorm.stage2a.runtime.RetrievalEngine", lambda session: _FakeRetrieval())
@@ -216,3 +202,4 @@ def test_runtime_uses_fallback_evidence_pack_when_controller_selected_none(monke
     assert result.answer.mode == "partial"
     assert result.answer.evidence[0].evidence_id.startswith("ev-fallback-")
     assert "Runtime fallback used the deterministic evidence pack." in result.controller.reasoning_summary
+    assert any("Verifier skipped" in item for item in result.answer.limitations)

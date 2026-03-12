@@ -165,7 +165,7 @@ class RetrievalEngine:
 
         locator_normalized = locator
         node_hits = [
-            self._build_node_hit(node=node, score=1.0, source_kind="document_node_locator")
+            self._build_node_hit(node=node, score=0.9, source_kind="document_node_locator")
             for node in self.document_nodes.list_by_locator(document_version_id, locator_normalized)
         ]
 
@@ -179,7 +179,7 @@ class RetrievalEngine:
             unit_hits.append(
                 RetrievalHit(
                     source_kind="retrieval_unit_locator",
-                    score=0.98,
+                    score=1.02,
                     document_id=document.id,
                     document_version_id=document_version_id,
                     document_display_code=document.display_code,
@@ -329,12 +329,18 @@ class RetrievalEngine:
         scored: list[tuple[float, int, RetrievalHit]] = []
         for hit in merged[: self.config.retrieval.merged_top_k]:
             rerank_score = hit.score
-            if hit.source_kind.endswith("locator"):
-                rerank_score += 0.3
-            elif hit.source_kind == "retrieval_unit_lexical":
+            if hit.source_kind == "retrieval_unit_locator":
+                rerank_score += 0.35
+            elif hit.source_kind == "retrieval_unit_context":
+                rerank_score += 0.22
+            elif hit.source_kind == "document_node_locator":
                 rerank_score += 0.08
+            elif hit.source_kind == "retrieval_unit_lexical":
+                rerank_score += 0.18
             elif hit.source_kind in {"retrieval_unit_dense", "document_card_dense"}:
-                rerank_score += 0.06
+                rerank_score += 0.15
+            elif hit.source_kind == "document_node":
+                rerank_score -= 0.04
             if explicit_locator_count and hit.locator:
                 rerank_score += 0.05
             scored.append((round(rerank_score, 4), hit.order_index or 0, hit))
@@ -454,13 +460,52 @@ class RetrievalEngine:
             if hit.node_id is not None
         ]
         for hit in top_expandable:
+            contextual_hits.extend(self._contextual_units_for_node_hit(hit))
             contextual_hits.extend(
                 self.expand_neighbors(
                     document_version_id=hit.document_version_id,
                     node_id=hit.node_id,
                 )
             )
-        return _dedupe_hits(contextual_hits)
+        reranked = self.merge_and_rerank_hits(
+            locator_hits=[item for item in contextual_hits if item.source_kind.endswith("locator")],
+            lexical_hits=[item for item in contextual_hits if item.source_kind in {"retrieval_unit_lexical", "retrieval_unit_context", "document_node"}],
+            dense_hits=[item for item in contextual_hits if item.source_kind in {"retrieval_unit_dense", "document_card_dense"}],
+            explicit_locator_count=sum(1 for item in hits if item.locator),
+        )
+        return _dedupe_hits(reranked)
+
+    def _contextual_units_for_node_hit(self, hit: RetrievalHit) -> list[RetrievalHit]:
+        """Load enclosing semantic blocks for one node hit so answer generation can prefer block context."""
+
+        if hit.order_index is None:
+            return []
+        contextual_hits: list[RetrievalHit] = []
+        for unit in self.retrieval_units.list_for_document_version_and_type(hit.document_version_id, "semantic_block"):
+            if unit.start_order_index is None or unit.end_order_index is None:
+                continue
+            if not (unit.start_order_index <= hit.order_index <= unit.end_order_index):
+                continue
+            document = self._load_document_by_version(unit.document_version_id)
+            if document is None:
+                continue
+            contextual_hits.append(
+                RetrievalHit(
+                    source_kind="retrieval_unit_context",
+                    score=min(1.1, hit.score + 0.12),
+                    document_id=document.id,
+                    document_version_id=unit.document_version_id,
+                    document_display_code=document.display_code,
+                    document_title=document.title,
+                    node_id=unit.anchor_node_id,
+                    retrieval_unit_id=unit.id,
+                    order_index=unit.start_order_index,
+                    locator=unit.locator_primary,
+                    heading_path=unit.heading_path,
+                    text=unit.text,
+                )
+            )
+        return contextual_hits
 
 
 def _document_fallback_text(document: Document) -> str:
