@@ -130,7 +130,7 @@
 - [x] Добавить deterministic sufficiency check до `Composer`: document match, locator match, count `retrieval_unit` hits, count node-only hits, coverage по evidence.
 - [x] Добавить ambiguity gate: слишком широкие вопросы должны переходить в `clarify`, а не в уверенный `direct`.
 - [x] Ослабить downgrade в `partial`, если документ найден, `retrieval_unit` найден и evidence достаточен для прямого ответа.
-- [ ] Сделать limitations причинными и диагностичными: указывать, что именно ограничило ответ, а не общую формулировку.
+- [x] Сделать limitations причинными и диагностичными: указывать, что именно ограничило ответ, а не общую формулировку.
 - [x] Обновить tests на `expected mode match rate`, `partial answer rate` и сценарии `ambiguous_scenario`.
 
 ### Блок H4. Цикл повторной оценки и приемка

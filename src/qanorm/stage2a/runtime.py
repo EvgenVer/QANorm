@@ -104,7 +104,10 @@ class Stage2ARuntime:
                 )
                 answer = verifier.verify(query_text=query_text, draft=draft)
             else:
-                answer = _build_interactive_answer_from_draft(draft)
+                answer = _build_interactive_answer_from_draft(
+                    draft,
+                    parsed_query=parsed,
+                )
             answer = answer.model_copy(
                 update={"debug_trace": _build_debug_trace(controller_result, enabled=self.config.runtime.enable_debug_trace)}
             )
@@ -183,9 +186,19 @@ def _enrich_controller_result(
     )
 
 
-def _build_interactive_answer_from_draft(draft) -> Stage2AAnswerDTO:
-    limitations = list(draft.limitations)
-    limitations.append("Verifier skipped for interactive partial answer to avoid degrading the response.")
+def _build_interactive_answer_from_draft(
+    draft,
+    *,
+    parsed_query: ParsedQuery,
+) -> Stage2AAnswerDTO:
+    limitations = _dedupe_preserve_order(
+        list(draft.limitations)
+        + _derive_interactive_limitations(
+            answer_mode=draft.answer_mode,
+            evidence=draft.evidence,
+            parsed_query=parsed_query,
+        )
+    )
     return Stage2AAnswerDTO(
         mode=draft.answer_mode,
         answer_text=draft.answer_text,
@@ -327,3 +340,44 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
         seen.add(value)
         ordered.append(value)
     return ordered
+
+
+def _derive_interactive_limitations(
+    *,
+    answer_mode: str,
+    evidence: list[EvidenceItemDTO],
+    parsed_query: ParsedQuery,
+) -> list[str]:
+    limitations: list[str] = []
+    retrieval_unit_count = sum(1 for item in evidence if item.retrieval_unit_id is not None)
+    node_only_count = sum(1 for item in evidence if item.node_id is not None and item.retrieval_unit_id is None)
+    unique_documents = {item.document_display_code for item in evidence if item.document_display_code}
+    has_locator = any(bool(item.locator) for item in evidence)
+
+    if answer_mode == "clarify":
+        limitations.append(
+            "Ответ ограничен: вопрос слишком широкий для уверенного нормативного вывода без уточнения объекта, типа конструкции или нужного документа."
+        )
+        if len(unique_documents) >= 2:
+            limitations.append(
+                "Найдено несколько конкурирующих нормативных веток, поэтому система просит уточнение вместо уверенного прямого ответа."
+            )
+        return limitations
+
+    if answer_mode == "partial":
+        if retrieval_unit_count == 0 and node_only_count > 0:
+            limitations.append(
+                "Ответ частичный: найдены в основном точечные node-level фрагменты без достаточного семантического блока вокруг них."
+            )
+        elif retrieval_unit_count < 2:
+            limitations.append(
+                "Ответ частичный: найденных контекстных retrieval-unit фрагментов пока недостаточно для полностью уверенного прямого вывода."
+            )
+        if parsed_query.explicit_locator_values and not has_locator:
+            limitations.append(
+                "Ответ частичный: релевантный документ найден, но ожидаемый locator не подтвержден в итоговом evidence-пакете."
+            )
+        limitations.append(
+            "Дополнительная LLM-верификация в interactive-режиме пропущена, чтобы не урезать уже найденный контекст."
+        )
+    return limitations

@@ -256,7 +256,7 @@ def test_runtime_uses_fallback_evidence_pack_when_controller_selected_none(monke
     assert result.answer.mode == "partial"
     assert result.answer.evidence[0].evidence_id.startswith("ev-fallback-")
     assert "Runtime fallback used the deterministic evidence pack." in result.controller.reasoning_summary
-    assert any("Verifier skipped" in item for item in result.answer.limitations)
+    assert any("interactive-режиме" in item for item in result.answer.limitations)
 
 
 def test_runtime_promotes_partial_to_direct_when_one_document_has_enough_context(monkeypatch) -> None:
@@ -421,3 +421,4 @@ def test_runtime_switches_to_clarify_for_broad_multi_document_query(monkeypatch)
     assert result.controller.answer_mode == "clarify"
     assert result.answer.mode == "clarify"
     assert "switched the answer to clarify" in result.controller.reasoning_summary
+    assert any("вопрос слишком широкий" in item for item in result.answer.limitations)
