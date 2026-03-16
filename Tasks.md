@@ -142,6 +142,13 @@
 - [ ] Если `document hit@3 < 0.85` или `locator hit@5 < 0.70` или `expected mode match rate < 0.75`, завести еще один короткий remediation-cycle до readiness report.
 - [ ] Подготовить итоговый MVP readiness report с финальными метриками, списком известных ограничений и рекомендациями для следующей итерации DSPy optimization.
 
+### Блок H5. Corpus repair для отсутствующих canonical-документов
+
+- [x] Провести forensic-разбор оставшихся провалов и отделить retrieval bugs от дефектов корпуса.
+- [x] Зафиксировать, что `ГОСТ 27751-2014` и `СП 1.13130.2020` отсутствуют в canonical `documents`, а `SP 1.0` является placeholder-записью без source/raw linkage.
+- [x] Убрать `SP 1.0` из retrieval candidate set и закрыть short-code prefix leakage вида `СП 1 -> СП 107`.
+- [ ] Подготовить targeted plan repair корпуса: удалить или изолировать placeholder `SP 1.0`, восстановить canonical ingest для `ГОСТ 27751-2014` и `СП 1.13130.2020`, затем пересобрать aliases и retrieval units для этих семейств.
+
 ## Покрытие плана
 
 - Блок `A` покрывает подготовку Stage 1 под Stage 2A.

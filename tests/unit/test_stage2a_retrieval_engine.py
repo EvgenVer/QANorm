@@ -204,3 +204,80 @@ def test_resolve_document_uses_family_fallback_for_explicit_gost_query() -> None
     assert resolved
     assert resolved[0].display_code == "ГОСТ 27751-2014"
     assert resolved[0].reason in {"explicit_family_fallback", "prefix_alias", "exact_alias"}
+
+
+def test_resolve_document_does_not_match_short_prefix_into_longer_numeric_family() -> None:
+    retrieval = RetrievalEngine(MagicMock())
+    sp107_document = type(
+        "Document",
+        (),
+        {
+            "id": uuid4(),
+            "display_code": "СП 107.13330.2012",
+            "title": "Теплицы и парники",
+            "current_version": type("Version", (), {"id": uuid4()})(),
+        },
+    )()
+    alias = type(
+        "Alias",
+        (),
+        {
+            "document_id": sp107_document.id,
+            "alias_raw": "СП 107",
+            "alias_normalized": "сп 107",
+            "confidence": 1.0,
+        },
+    )()
+    retrieval.documents.get_by_normalized_code = lambda code: None
+    retrieval.documents.get = lambda document_id: sp107_document if document_id == sp107_document.id else None
+    retrieval.documents.list_all = lambda: [sp107_document]
+    retrieval.document_aliases.list_by_alias_normalized = lambda value: []
+    retrieval.document_aliases.list_by_alias_prefix = lambda value: [alias]
+    query = ParsedQuery(
+        raw_text="Что СП 1 требует по эвакуации?",
+        normalized_text="Что СП 1 требует по эвакуации?",
+        explicit_document_codes=["СП 1"],
+        explicit_locator_values=[],
+        lexical_query="сп 1 эвакуац",
+        lexical_tokens=["сп", "1", "эвакуац"],
+    )
+
+    resolved = retrieval.resolve_document(query)
+
+    assert resolved == []
+
+
+def test_rerank_document_candidates_filters_placeholder_documents() -> None:
+    retrieval = RetrievalEngine(MagicMock())
+    query = ParsedQuery(
+        raw_text="Что СП 1 говорит про эвакуационные выходы?",
+        normalized_text="Что СП 1 говорит про эвакуационные выходы?",
+        explicit_document_codes=["СП 1"],
+        explicit_locator_values=[],
+        lexical_query="сп 1 эвакуационные выходы",
+        lexical_tokens=["сп", "1", "эвакуацион", "выход"],
+    )
+    candidates = [
+        DocumentCandidate(
+            document_id=uuid4(),
+            document_version_id=uuid4(),
+            score=1.0,
+            reason="exact_alias",
+            matched_value="SP 1",
+            display_code="SP 1.0",
+            title="SP 1.0",
+        ),
+        DocumentCandidate(
+            document_id=uuid4(),
+            document_version_id=uuid4(),
+            score=0.9,
+            reason="prefix_alias",
+            matched_value="СП 4",
+            display_code="СП 4.13130.2013",
+            title="Системы противопожарной защиты",
+        ),
+    ]
+
+    reranked = retrieval._rerank_document_candidates(query, candidates)
+
+    assert [item.display_code for item in reranked] == ["СП 4.13130.2013"]

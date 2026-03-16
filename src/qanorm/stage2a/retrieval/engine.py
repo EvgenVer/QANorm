@@ -94,7 +94,7 @@ class RetrievalEngine:
 
         for code in query.explicit_document_codes:
             document = self.documents.get_by_normalized_code(code)
-            if document is not None:
+            if document is not None and not _is_placeholder_document(document.display_code, document.title):
                 self._register_document_candidate(
                     candidates_by_document,
                     document,
@@ -106,7 +106,7 @@ class RetrievalEngine:
             normalized_alias = normalize_alias_value(code) or code.casefold()
             for alias in self.document_aliases.list_by_alias_normalized(normalized_alias):
                 document = self.documents.get(alias.document_id)
-                if document is None:
+                if document is None or _is_placeholder_document(document.display_code, document.title):
                     continue
                 self._register_document_candidate(
                     candidates_by_document,
@@ -117,8 +117,10 @@ class RetrievalEngine:
                 )
 
             for alias in self.document_aliases.list_by_alias_prefix(normalized_alias):
+                if not _matches_alias_prefix_boundary(alias.alias_normalized, normalized_alias):
+                    continue
                 document = self.documents.get(alias.document_id)
-                if document is None:
+                if document is None or _is_placeholder_document(document.display_code, document.title):
                     continue
                 self._register_document_candidate(
                     candidates_by_document,
@@ -129,6 +131,8 @@ class RetrievalEngine:
                 )
 
             for document in self.documents.list_all():
+                if _is_placeholder_document(document.display_code, document.title):
+                    continue
                 if not _document_matches_family(document.display_code, code):
                     continue
                 self._register_document_candidate(
@@ -160,7 +164,7 @@ class RetrievalEngine:
             seen: set[UUID] = set()
             for hit in scored_cards:
                 document = self._load_document_by_version(hit.document_version_id)
-                if document is None or document.id in seen:
+                if document is None or document.id in seen or _is_placeholder_document(document.display_code, document.title):
                     continue
                 candidates.append(
                     self._build_document_candidate(
@@ -438,6 +442,11 @@ class RetrievalEngine:
     def _rerank_document_candidates(self, query: ParsedQuery, candidates: list[DocumentCandidate]) -> list[DocumentCandidate]:
         """Rerank document candidates using family matching, edition hints, and domain priors."""
 
+        candidates = [
+            candidate
+            for candidate in candidates
+            if not _is_placeholder_document(candidate.display_code, candidate.title)
+        ]
         if not candidates:
             return []
 
@@ -702,6 +711,17 @@ def _document_matches_family(display_code: str, family: str) -> bool:
     return _document_family(display_code) == _document_family(family)
 
 
+def _matches_alias_prefix_boundary(alias_normalized: str, alias_prefix: str) -> bool:
+    if alias_normalized == alias_prefix:
+        return True
+    if not alias_normalized.startswith(alias_prefix):
+        return False
+    if len(alias_normalized) == len(alias_prefix):
+        return True
+    next_char = alias_normalized[len(alias_prefix)]
+    return next_char in {".", "-", "/", " "}
+
+
 def _document_family(display_code: str | None) -> str:
     normalized = normalize_document_code(display_code or "")
     family_match = re.match(r"^([A-ZА-ЯЁ]+)\s*(\d+)", normalized)
@@ -720,6 +740,12 @@ def _is_legacy_document(display_code: str | None, title: str | None) -> bool:
     normalized_code = normalize_document_code(display_code or "")
     normalized_title = (title or "").casefold()
     return normalized_code.startswith(("СНИП", "SNIP")) or "пособ" in normalized_title
+
+
+def _is_placeholder_document(display_code: str | None, title: str | None) -> bool:
+    normalized_code = normalize_document_code(display_code or "")
+    normalized_title = normalize_whitespace(title or "")
+    return bool(re.fullmatch(r"(SP|СП)\s+\d+\.0", normalized_code)) and normalized_title == (display_code or "")
 
 
 def _extract_year(value: str | None) -> int | None:
