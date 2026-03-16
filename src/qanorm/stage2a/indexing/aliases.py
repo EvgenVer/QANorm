@@ -152,6 +152,10 @@ def _derive_code_aliases(code: str | None) -> list[str]:
 
 def _derive_shortened_code_variants(rest: str) -> list[str]:
     variants = {rest}
+    if "-" in rest:
+        head, tail = rest.rsplit("-", 1)
+        if head and tail.isdigit() and len(tail) == 4:
+            variants.add(head)
     pieces = rest.split(".")
     if len(pieces) >= 3 and pieces[-1].isdigit() and len(pieces[-1]) == 4:
         variants.add(".".join(pieces[:-1]))

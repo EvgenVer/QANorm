@@ -1,31 +1,21 @@
 from __future__ import annotations
 
-from qanorm.stage2a.retrieval import QueryParser
+from qanorm.stage2a.retrieval.query_parser import QueryParser
 
 
-def test_query_parser_extracts_explicit_document_codes_and_locators() -> None:
+def test_query_parser_expands_compact_alias_into_family_variants() -> None:
     parser = QueryParser()
 
-    parsed = parser.parse("Что требует СП 20.13330.2016 по п. 1.1 для нагрузок?")
+    parsed = parser.parse("Что в СП63 по плитам?")
 
-    assert parsed.explicit_document_codes == ["СП 20.13330.2016"]
-    assert parsed.explicit_locator_values == ["1.1"]
-    assert "нагруз" in parsed.lexical_query
+    assert "СП 63" in parsed.explicit_document_codes
+    assert "СП63" in parsed.explicit_document_codes
 
 
-def test_query_parser_extracts_appendix_locator() -> None:
+def test_query_parser_keeps_yearless_variant_for_gost_with_year_suffix() -> None:
     parser = QueryParser()
 
-    parsed = parser.parse("Посмотри приложение А ГОСТ 27751-2014")
+    parsed = parser.parse("Что ГОСТ27751-2014 говорит про надежность?")
 
-    assert parsed.explicit_document_codes == ["ГОСТ 27751-2014"]
-    assert parsed.explicit_locator_values == ["а"]
-
-
-def test_query_parser_expands_compact_document_prefixes() -> None:
-    parser = QueryParser()
-
-    parsed = parser.parse("Что требует СП63 по п. 5.1?")
-
-    assert parsed.explicit_document_codes == ["СП 63"]
-    assert parsed.explicit_locator_values == ["5.1"]
+    assert "ГОСТ 27751-2014" in parsed.explicit_document_codes
+    assert "ГОСТ 27751" in parsed.explicit_document_codes

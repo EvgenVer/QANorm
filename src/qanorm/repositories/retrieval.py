@@ -57,6 +57,20 @@ class DocumentAliasRepository:
         )
         return list(self.session.execute(stmt).scalars().all())
 
+    def list_by_alias_prefix(self, alias_prefix: str, *, limit: int = 25) -> list[DocumentAlias]:
+        """List candidate aliases by normalized prefix lookup key."""
+
+        stmt = (
+            select(DocumentAlias)
+            .where(DocumentAlias.alias_normalized.like(f"{alias_prefix}%"))
+            .order_by(
+                DocumentAlias.confidence.desc(),
+                DocumentAlias.created_at.asc(),
+            )
+            .limit(limit)
+        )
+        return list(self.session.execute(stmt).scalars().all())
+
     def delete_for_document(self, document_id: UUID) -> int:
         """Delete all aliases for one canonical document."""
 

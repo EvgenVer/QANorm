@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Callable
 from uuid import UUID
 
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from qanorm.indexing.fts import build_text_tsv, tokenize_for_fts
 from qanorm.models import Document, DocumentNode, RetrievalUnit
+from qanorm.normalizers.codes import normalize_document_code
 from qanorm.repositories import (
     DocumentAliasRepository,
     DocumentNodeRepository,
@@ -19,8 +21,19 @@ from qanorm.repositories import (
 )
 from qanorm.stage2a.config import get_stage2a_config
 from qanorm.stage2a.indexing.backfill import GeminiEmbeddingClient
+from qanorm.stage2a.indexing.aliases import normalize_alias_value
 from qanorm.stage2a.retrieval.query_parser import ParsedQuery, QueryParser
 from qanorm.utils.text import normalize_whitespace
+
+
+_YEAR_RE = re.compile(r"(19|20)\d{2}")
+_TOPIC_DOCUMENT_PRIORS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
+    (("нагруз", "сочетан", "надежн", "предельн", "воздейств"), ("СП 20", "ГОСТ 27751")),
+    (("тепло", "утепл", "теплопередач", "огражда", "стен", "конденс"), ("СП 50",)),
+    (("эвакуац", "выход", "пожар", "огнестойк", "дым"), ("СП 1", "СП 2", "ФЗ 123")),
+    (("фундамент", "основан", "грунт", "свай", "осад"), ("СП 22", "СП 24")),
+    (("арматур", "железобет", "бетон", "плит", "колонн"), ("СП 63",)),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,33 +89,45 @@ class RetrievalEngine:
     def resolve_document(self, query: ParsedQuery) -> list[DocumentCandidate]:
         """Resolve documents from explicit codes or exact aliases."""
 
-        candidates: list[DocumentCandidate] = []
-        seen: set[UUID] = set()
+        candidates_by_document: dict[UUID, DocumentCandidate] = {}
 
         for code in query.explicit_document_codes:
             document = self.documents.get_by_normalized_code(code)
             if document is not None:
-                candidate = self._build_document_candidate(document, score=1.0, reason="explicit_code", matched_value=code)
-                candidates.append(candidate)
-                seen.add(document.id)
-                continue
+                self._register_document_candidate(
+                    candidates_by_document,
+                    document,
+                    score=1.15,
+                    reason="explicit_code",
+                    matched_value=code,
+                )
 
-            for alias in self.document_aliases.list_by_alias_normalized(code.casefold()):
-                if alias.document_id in seen:
-                    continue
+            normalized_alias = normalize_alias_value(code) or code.casefold()
+            for alias in self.document_aliases.list_by_alias_normalized(normalized_alias):
                 document = self.documents.get(alias.document_id)
                 if document is None:
                     continue
-                candidate = self._build_document_candidate(
+                self._register_document_candidate(
+                    candidates_by_document,
                     document,
-                    score=0.96,
+                    score=1.0 + min(alias.confidence, 1.0) * 0.08,
                     reason="exact_alias",
                     matched_value=alias.alias_raw,
                 )
-                candidates.append(candidate)
-                seen.add(document.id)
 
-        candidates.sort(key=lambda item: (-item.score, item.display_code))
+            for alias in self.document_aliases.list_by_alias_prefix(normalized_alias):
+                document = self.documents.get(alias.document_id)
+                if document is None:
+                    continue
+                self._register_document_candidate(
+                    candidates_by_document,
+                    document,
+                    score=0.82 + min(alias.confidence, 1.0) * 0.08,
+                    reason="prefix_alias",
+                    matched_value=alias.alias_raw,
+                )
+
+        candidates = self._rerank_document_candidates(query, list(candidates_by_document.values()))
         return candidates[: self.config.retrieval.document_shortlist_size]
 
     def discover_documents(self, query: ParsedQuery) -> list[DocumentCandidate]:
@@ -137,7 +162,7 @@ class RetrievalEngine:
                 if len(candidates) >= limit:
                     break
             if candidates:
-                return candidates
+                return self._rerank_document_candidates(query, candidates)[:limit]
 
         # Fallback while derived data is still empty: rank raw documents and aliases.
         tokens = set(query.lexical_tokens)
@@ -157,29 +182,24 @@ class RetrievalEngine:
                     matched_value=document.display_code,
                 )
             )
-        candidates.sort(key=lambda item: (-item.score, item.display_code))
-        return candidates[:limit]
+        return self._rerank_document_candidates(query, candidates)[:limit]
 
     def lookup_locator(self, *, document_version_id: UUID, locator: str) -> list[RetrievalHit]:
         """Find node and retrieval-unit hits for one locator inside one document version."""
 
-        locator_normalized = locator
-        node_hits = [
-            self._build_node_hit(node=node, score=0.9, source_kind="document_node_locator")
-            for node in self.document_nodes.list_by_locator(document_version_id, locator_normalized)
-        ]
-
+        locator_normalized = locator.strip()
         unit_hits: list[RetrievalHit] = []
+        document = self._load_document_by_version(document_version_id)
+        if document is None:
+            return []
         for unit in self.retrieval_units.list_for_document_version(document_version_id):
-            if unit.locator_primary != locator_normalized:
-                continue
-            document = self._load_document_by_version(document_version_id)
-            if document is None:
+            score = _match_locator_value(locator_normalized, unit.locator_primary, unit.heading_path)
+            if score <= 0:
                 continue
             unit_hits.append(
                 RetrievalHit(
-                    source_kind="retrieval_unit_locator",
-                    score=1.02,
+                    source_kind="retrieval_unit_locator" if unit.locator_primary == locator_normalized else "retrieval_unit_locator_context",
+                    score=score,
                     document_id=document.id,
                     document_version_id=document_version_id,
                     document_display_code=document.display_code,
@@ -190,6 +210,19 @@ class RetrievalEngine:
                     locator=unit.locator_primary,
                     heading_path=unit.heading_path,
                     text=unit.text,
+                )
+            )
+
+        node_hits: list[RetrievalHit] = []
+        for node in self.document_nodes.list_for_document_version(document_version_id):
+            score = _match_locator_value(locator_normalized, node.locator_normalized, node.heading_path)
+            if score <= 0:
+                continue
+            node_hits.append(
+                self._build_node_hit(
+                    node=node,
+                    score=score,
+                    source_kind="document_node_locator" if node.locator_normalized == locator_normalized else "document_node_locator_context",
                 )
             )
 
@@ -295,7 +328,7 @@ class RetrievalEngine:
         if not documents:
             documents = self.discover_documents(parsed)
 
-        version_ids = [item.document_version_id for item in documents if item.document_version_id is not None]
+        version_ids = self._scope_document_version_ids(parsed, documents)
         locator_hits: list[RetrievalHit] = []
         for version_id in version_ids:
             for locator in parsed.explicit_locator_values:
@@ -330,11 +363,15 @@ class RetrievalEngine:
         for hit in merged[: self.config.retrieval.merged_top_k]:
             rerank_score = hit.score
             if hit.source_kind == "retrieval_unit_locator":
-                rerank_score += 0.35
+                rerank_score += 0.42
+            elif hit.source_kind == "retrieval_unit_locator_context":
+                rerank_score += 0.30
             elif hit.source_kind == "retrieval_unit_context":
                 rerank_score += 0.22
             elif hit.source_kind == "document_node_locator":
-                rerank_score += 0.08
+                rerank_score += 0.02
+            elif hit.source_kind == "document_node_locator_context":
+                rerank_score -= 0.02
             elif hit.source_kind == "retrieval_unit_lexical":
                 rerank_score += 0.18
             elif hit.source_kind in {"retrieval_unit_dense", "document_card_dense"}:
@@ -367,11 +404,112 @@ class RetrievalEngine:
             title=document.title,
         )
 
+    def _register_document_candidate(
+        self,
+        candidates_by_document: dict[UUID, DocumentCandidate],
+        document: Document,
+        *,
+        score: float,
+        reason: str,
+        matched_value: str | None,
+    ) -> None:
+        candidate = self._build_document_candidate(
+            document,
+            score=score,
+            reason=reason,
+            matched_value=matched_value,
+        )
+        existing = candidates_by_document.get(document.id)
+        if existing is None or candidate.score > existing.score:
+            candidates_by_document[document.id] = candidate
+
+    def _rerank_document_candidates(self, query: ParsedQuery, candidates: list[DocumentCandidate]) -> list[DocumentCandidate]:
+        """Rerank document candidates using family matching, edition hints, and domain priors."""
+
+        if not candidates:
+            return []
+
+        query_requests_legacy = any(code.startswith(("СНИП", "СНиП", "SNIP")) for code in query.explicit_document_codes)
+        topic_priors = _topic_document_priors(query)
+        has_modern_candidate = any(not _is_legacy_document(item.display_code, item.title) for item in candidates)
+        reranked: list[DocumentCandidate] = []
+        for candidate in candidates:
+            score = candidate.score
+            score += self._explicit_code_match_bonus(query, candidate)
+            score += self._topic_prior_bonus(candidate, topic_priors)
+            version = self.document_versions.get(candidate.document_version_id) if candidate.document_version_id else None
+            if version is not None:
+                if version.is_active:
+                    score += 0.1
+                if version.is_outdated:
+                    score -= 0.18
+            if has_modern_candidate and not query_requests_legacy and _is_legacy_document(candidate.display_code, candidate.title):
+                score -= 0.22
+            reranked.append(
+                DocumentCandidate(
+                    document_id=candidate.document_id,
+                    document_version_id=candidate.document_version_id,
+                    score=round(score, 4),
+                    reason=candidate.reason,
+                    matched_value=candidate.matched_value,
+                    display_code=candidate.display_code,
+                    title=candidate.title,
+                )
+            )
+
+        reranked.sort(
+            key=lambda item: (
+                -item.score,
+                0 if not _is_legacy_document(item.display_code, item.title) else 1,
+                item.display_code,
+            )
+        )
+        return reranked
+
+    def _explicit_code_match_bonus(self, query: ParsedQuery, candidate: DocumentCandidate) -> float:
+        if not query.explicit_document_codes:
+            return 0.0
+        candidate_code = normalize_document_code(candidate.display_code)
+        best_bonus = 0.0
+        candidate_year = _extract_year(candidate_code)
+        for code in query.explicit_document_codes:
+            normalized_code = normalize_document_code(code)
+            if candidate_code == normalized_code:
+                best_bonus = max(best_bonus, 0.35)
+                continue
+            if candidate_code.startswith(normalized_code):
+                best_bonus = max(best_bonus, 0.22)
+            elif normalized_code.startswith(candidate_code):
+                best_bonus = max(best_bonus, 0.14)
+
+            query_year = _extract_year(normalized_code)
+            if query_year and candidate_year and query_year != candidate_year:
+                best_bonus -= 0.28
+        return best_bonus
+
+    def _topic_prior_bonus(self, candidate: DocumentCandidate, topic_priors: set[str]) -> float:
+        if not topic_priors:
+            return 0.0
+        for family in topic_priors:
+            if _document_matches_family(candidate.display_code, family):
+                return 0.18
+        return 0.0
+
     def _load_document_by_version(self, document_version_id: UUID) -> Document | None:
         version = self.document_versions.get(document_version_id)
         if version is None:
             return None
         return self.documents.get(version.document_id)
+
+    def _scope_document_version_ids(self, query: ParsedQuery, documents: list[DocumentCandidate]) -> list[UUID]:
+        """Limit retrieval scope for explicit-document queries to the strongest resolved candidates."""
+
+        version_ids = [item.document_version_id for item in documents if item.document_version_id is not None]
+        if not query.explicit_document_codes:
+            return version_ids
+        if not version_ids:
+            return []
+        return [version_ids[0]]
 
     def _rank_retrieval_units(self, units: list[RetrievalUnit], query_text: str, *, source_kind: str) -> list[RetrievalHit]:
         hits: list[RetrievalHit] = []
@@ -468,7 +606,11 @@ class RetrievalEngine:
                 )
             )
         reranked = self.merge_and_rerank_hits(
-            locator_hits=[item for item in contextual_hits if item.source_kind.endswith("locator")],
+            locator_hits=[
+                item
+                for item in contextual_hits
+                if item.source_kind.endswith("locator") or item.source_kind.endswith("locator_context")
+            ],
             lexical_hits=[item for item in contextual_hits if item.source_kind in {"retrieval_unit_lexical", "retrieval_unit_context", "document_node"}],
             dense_hits=[item for item in contextual_hits if item.source_kind in {"retrieval_unit_dense", "document_card_dense"}],
             explicit_locator_count=sum(1 for item in hits if item.locator),
@@ -510,6 +652,47 @@ class RetrievalEngine:
 
 def _document_fallback_text(document: Document) -> str:
     return " ".join(part for part in (document.display_code, document.normalized_code, document.title) if part)
+
+
+def _topic_document_priors(query: ParsedQuery) -> set[str]:
+    tokens = query.lexical_tokens
+    priors: set[str] = set()
+    for triggers, families in _TOPIC_DOCUMENT_PRIORS:
+        if any(any(token.startswith(trigger) for trigger in triggers) for token in tokens):
+            priors.update(families)
+    return priors
+
+
+def _document_matches_family(display_code: str, family: str) -> bool:
+    return normalize_document_code(display_code).startswith(normalize_document_code(family))
+
+
+def _is_legacy_document(display_code: str | None, title: str | None) -> bool:
+    normalized_code = normalize_document_code(display_code or "")
+    normalized_title = (title or "").casefold()
+    return normalized_code.startswith(("СНИП", "SNIP")) or "пособ" in normalized_title
+
+
+def _extract_year(value: str | None) -> int | None:
+    if not value:
+        return None
+    match = _YEAR_RE.search(value)
+    return int(match.group(0)) if match else None
+
+
+def _match_locator_value(query_locator: str, candidate_locator: str | None, heading_path: str | None) -> float:
+    normalized_query = (query_locator or "").strip()
+    normalized_locator = (candidate_locator or "").strip()
+    heading = (heading_path or "").casefold()
+    if normalized_locator == normalized_query and normalized_locator:
+        return 1.06
+    if normalized_locator and normalized_locator.startswith(f"{normalized_query}."):
+        return 0.96
+    if normalized_query and normalized_query.startswith(f"{normalized_locator}.") and normalized_locator:
+        return 0.9
+    if normalized_query and normalized_query.casefold() in heading:
+        return 0.82
+    return 0.0
 
 
 def _dedupe_hits(hits: list[RetrievalHit]) -> list[RetrievalHit]:

@@ -6,7 +6,10 @@
 
 - `Stage 1` реализован и используется как базовый слой данных;
 - старый Stage 2 удален;
-- следующий шаг проекта: собрать быстрый `Stage 2A MVP` в формате `DSPy-hybrid`.
+- `Stage 2A MVP` собран и проходит ручное тестирование;
+- базовый eval-прогон на `150` вопросах уже выполнен;
+- текущие baseline-метрики: `document hit@3 = 0.74`, `locator hit@5 = 0.00`, `expected mode match rate = 0.66`, `partial answer rate = 0.1933`;
+- следующий шаг проекта: исправить критические провалы eval и довести MVP до приемки.
 
 ## Stage 1
 
@@ -103,9 +106,40 @@
 - [x] Не использовать точные пункты/таблицы/формулы как основной тип eval-вопросов; оставить их только в техническом diagnostic sub-set.
 - [x] Реализовать прогон eval-набора и сбор метрик качества.
 - [x] Зафиксировать `document hit@3`, `locator hit@5`, `grounded answer rate`, `unsupported claim rate`, `partial answer rate`.
-- [ ] Зафиксировать eval-набор как основу для следующей итерации DSPy optimization.
-- [ ] Исправить критические провалы по результатам eval.
+- [x] Зафиксировать eval-набор как основу для следующей итерации DSPy optimization.
 - [ ] Подготовить краткий MVP readiness report.
+
+### Блок H1. Исправление document ranking и edition drift
+
+- [x] Усилить `resolve_document` и `discover_documents` за счет более агрессивной нормализации кодов, сокращений и алиасов.
+- [x] Добавить в ranking явный приоритет актуальных редакций и penalty для legacy/устаревших документов, если найден современный СП/ГОСТ.
+- [x] Ввести hard scope для запросов с явным документом: если пользователь спрашивает `СП 63`, retrieval не должен свободно уходить в соседние документы.
+- [x] Добавить topic-to-document priors для провальных доменов eval: нагрузки/надежность, теплотехника, пожарные нормы, основания и фундаменты.
+- [x] Обновить unit/integration tests на document resolution, edition ranking и compact aliases.
+
+### Блок H2. Исправление locator-aware retrieval
+
+- [x] Добавить отдельный путь exact/prefix lookup по `locator_normalized`, `heading_path` и связным locator-алиасам.
+- [x] Если найден `document_node` с точным locator-hit, автоматически поднимать enclosing `retrieval_unit` как primary evidence вместо голого node-level ответа.
+- [x] Усилить local context expansion для locator-hit: anchor node + enclosing unit + neighbors.
+- [x] Пересобрать merge/rerank так, чтобы `retrieval_unit_locator` и `retrieval_unit_lexical` имели приоритет над `document_node_locator` как над semantic evidence.
+- [x] Добавить unit/integration tests на hidden locator diagnostic slice и зафиксировать рост `locator hit@5`.
+
+### Блок H3. Исправление interactive policy и answer mode
+
+- [x] Добавить deterministic sufficiency check до `Composer`: document match, locator match, count `retrieval_unit` hits, count node-only hits, coverage по evidence.
+- [x] Добавить ambiguity gate: слишком широкие вопросы должны переходить в `clarify`, а не в уверенный `direct`.
+- [x] Ослабить downgrade в `partial`, если документ найден, `retrieval_unit` найден и evidence достаточен для прямого ответа.
+- [ ] Сделать limitations причинными и диагностичными: указывать, что именно ограничило ответ, а не общую формулировку.
+- [x] Обновить tests на `expected mode match rate`, `partial answer rate` и сценарии `ambiguous_scenario`.
+
+### Блок H4. Цикл повторной оценки и приемка
+
+- [ ] Прогнать targeted eval по сценариям `explicit document without locator`, `compact alias / dirty input`, `ambiguous_scenario`, `diagnostic_locator_hidden`.
+- [ ] Прогнать полный eval-набор на `150` вопросах после исправлений.
+- [ ] Сравнить baseline и post-fix метрики, зафиксировать прирост и оставшиеся провалы.
+- [ ] Если `document hit@3 < 0.85` или `locator hit@5 < 0.70` или `expected mode match rate < 0.75`, завести еще один короткий remediation-cycle до readiness report.
+- [ ] Подготовить итоговый MVP readiness report с финальными метриками, списком известных ограничений и рекомендациями для следующей итерации DSPy optimization.
 
 ## Покрытие плана
 
@@ -116,4 +150,8 @@
 - Блок `E` покрывает DSPy `ReAct-lite` runtime.
 - Блок `F` покрывает DSPy answer layer.
 - Блок `G` покрывает `Streamlit` MVP.
-- Блок `H` покрывает приемку и оценку качества.
+- Блок `H` покрывает базовую приемку, eval-набор и фиксацию baseline-метрик.
+- Блок `H1` покрывает document ranking, edition drift и compact alias remediation.
+- Блок `H2` покрывает locator-aware retrieval remediation.
+- Блок `H3` покрывает interactive policy, clarify policy и answer-mode remediation.
+- Блок `H4` покрывает повторный eval-цикл, сравнение baseline/post-fix и итоговую приемку.

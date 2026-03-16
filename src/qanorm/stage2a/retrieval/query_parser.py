@@ -27,6 +27,7 @@ _COMPACT_PREFIX_RE = re.compile(
     r"\b(СП|СНиП|СНИП|ГОСТ|SP|SNIP|GOST)(\d)",
     re.IGNORECASE,
 )
+_YEAR_SUFFIX_RE = re.compile(r"[-./](\d{4})$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,8 +60,9 @@ class QueryParser:
             )
 
         document_codes = _dedupe_preserve_order(
-            normalize_document_code(match.group(0))
+            variant
             for match in _DOCUMENT_CODE_RE.finditer(normalized_text)
+            for variant in _expand_document_code_variants(normalize_document_code(match.group(0)))
         )
         locator_values = _dedupe_preserve_order(
             normalized
@@ -89,6 +91,32 @@ def _expand_compact_document_prefixes(text: str) -> str:
     """Insert a missing space between a known document prefix and its numeric code."""
 
     return _COMPACT_PREFIX_RE.sub(r"\1 \2", text)
+
+
+def _expand_document_code_variants(code: str) -> list[str]:
+    """Expand one detected code into compact and family variants used by retrieval."""
+
+    cleaned = normalize_document_code(code)
+    if not cleaned or " " not in cleaned:
+        return [cleaned] if cleaned else []
+
+    prefix, rest = cleaned.split(" ", 1)
+    variants = [cleaned, f"{prefix}{rest}"]
+
+    yearless = _strip_trailing_year(rest)
+    if yearless and yearless != rest:
+        variants.extend([f"{prefix} {yearless}", f"{prefix}{yearless}"])
+
+    first_segment = rest.split(".", 1)[0]
+    if first_segment:
+        variants.extend([f"{prefix} {first_segment}", f"{prefix}{first_segment}"])
+    return _dedupe_preserve_order(value for value in variants if value)
+
+
+def _strip_trailing_year(value: str) -> str:
+    """Drop a trailing year suffix such as `.2018` or `-2014` from one code tail."""
+
+    return _YEAR_SUFFIX_RE.sub("", value).strip()
 
 
 def _dedupe_preserve_order(values) -> list[str]:

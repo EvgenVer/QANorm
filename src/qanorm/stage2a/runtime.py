@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Callable
 
 from pydantic import BaseModel, Field
@@ -14,6 +15,13 @@ from qanorm.stage2a.contracts import AnswerClaimDTO
 from qanorm.stage2a.contracts import EvidenceItemDTO, Stage2AAnswerDTO
 from qanorm.stage2a.providers import Stage2ADspyModelBundle, build_stage2a_dspy_models
 from qanorm.stage2a.retrieval.engine import RetrievalEngine, RetrievalHit
+from qanorm.stage2a.retrieval.query_parser import ParsedQuery
+
+
+_AMBIGUOUS_QUERY_RE = re.compile(
+    r"(что\s+требуется\s+по|какие\s+нормы|что\s+нужно\s+учитывать|какие\s+требования\s+к)",
+    re.IGNORECASE,
+)
 
 
 class Stage2AQueryResult(BaseModel):
@@ -49,6 +57,7 @@ class Stage2ARuntime:
         session = self.session_factory()
         try:
             retrieval = RetrievalEngine(session)
+            parsed = retrieval.parse_query(query_text)
             controller = self._controller_factory(
                 retrieval_engine=retrieval,
                 config=self.config,
@@ -59,6 +68,12 @@ class Stage2ARuntime:
             controller_result = _enrich_controller_result(
                 controller_result=controller_result,
                 runtime_evidence=runtime_evidence,
+                parsed_query=parsed,
+                config=self.config,
+            )
+            controller_result = _apply_runtime_answer_policy(
+                controller_result=controller_result,
+                parsed_query=parsed,
                 config=self.config,
             )
 
@@ -130,6 +145,7 @@ def _enrich_controller_result(
     *,
     controller_result: ControllerAgentResult,
     runtime_evidence: list[EvidenceItemDTO],
+    parsed_query: ParsedQuery,
     config: Stage2AConfig,
 ) -> ControllerAgentResult:
     if not runtime_evidence:
@@ -150,9 +166,16 @@ def _enrich_controller_result(
     if not should_replace:
         return controller_result
 
+    replacement_mode = _suggest_answer_mode_from_evidence(
+        parsed_query=parsed_query,
+        evidence=runtime_evidence,
+        current_mode=controller_result.answer_mode,
+        config=config,
+    )
+
     return controller_result.model_copy(
         update={
-            "answer_mode": "partial" if controller_result.answer_mode in {"no_answer", "clarify", "direct"} else controller_result.answer_mode,
+            "answer_mode": replacement_mode,
             "selected_evidence_ids": [item.evidence_id for item in runtime_evidence],
             "evidence": runtime_evidence,
             "reasoning_summary": f"{controller_result.reasoning_summary} {reason}".strip(),
@@ -210,6 +233,89 @@ def _needs_context_enrichment(evidence: list[EvidenceItemDTO], *, config: Stage2
     if len(evidence) < config.retrieval.min_direct_answer_evidence:
         return True
     return False
+
+
+def _apply_runtime_answer_policy(
+    *,
+    controller_result: ControllerAgentResult,
+    parsed_query: ParsedQuery,
+    config: Stage2AConfig,
+) -> ControllerAgentResult:
+    suggested_mode = _suggest_answer_mode_from_evidence(
+        parsed_query=parsed_query,
+        evidence=controller_result.evidence,
+        current_mode=controller_result.answer_mode,
+        config=config,
+    )
+    if suggested_mode == controller_result.answer_mode:
+        return controller_result
+
+    reason = _runtime_policy_reason(parsed_query=parsed_query, evidence=controller_result.evidence, target_mode=suggested_mode)
+    return controller_result.model_copy(
+        update={
+            "answer_mode": suggested_mode,
+            "reasoning_summary": f"{controller_result.reasoning_summary} {reason}".strip(),
+        }
+    )
+
+
+def _suggest_answer_mode_from_evidence(
+    *,
+    parsed_query: ParsedQuery,
+    evidence: list[EvidenceItemDTO],
+    current_mode: str,
+    config: Stage2AConfig,
+) -> str:
+    if not evidence:
+        return current_mode
+
+    retrieval_unit_count = sum(1 for item in evidence if item.retrieval_unit_id is not None)
+    unique_documents = {item.document_display_code for item in evidence if item.document_display_code}
+    has_locator = any(bool(item.locator) for item in evidence)
+    explicit_document = bool(parsed_query.explicit_document_codes)
+    explicit_locator = bool(parsed_query.explicit_locator_values)
+
+    if _should_clarify(parsed_query=parsed_query, evidence=evidence):
+        return "clarify"
+
+    if current_mode in {"no_answer", "clarify", "partial"}:
+        if retrieval_unit_count >= config.retrieval.min_direct_answer_evidence and len(unique_documents) == 1:
+            if explicit_document or explicit_locator or has_locator:
+                return "direct"
+        if evidence and current_mode == "no_answer":
+            return "partial"
+    return current_mode
+
+
+def _should_clarify(*, parsed_query: ParsedQuery, evidence: list[EvidenceItemDTO]) -> bool:
+    if parsed_query.explicit_document_codes or parsed_query.explicit_locator_values:
+        return False
+    if _AMBIGUOUS_QUERY_RE.search(parsed_query.raw_text):
+        return True
+    if len(parsed_query.lexical_tokens) > 4:
+        return False
+
+    document_counts: dict[str, int] = {}
+    for item in evidence:
+        if not item.document_display_code:
+            continue
+        document_counts[item.document_display_code] = document_counts.get(item.document_display_code, 0) + 1
+    unique_document_count = len(document_counts)
+    dominant_document_hits = max(document_counts.values()) if document_counts else 0
+    has_locator = any(bool(item.locator) for item in evidence)
+    if unique_document_count >= 2 and dominant_document_hits < 2 and not has_locator:
+        return True
+    return False
+
+
+def _runtime_policy_reason(*, parsed_query: ParsedQuery, evidence: list[EvidenceItemDTO], target_mode: str) -> str:
+    if target_mode == "clarify":
+        return "Runtime switched the answer to clarify because the question is broad and the evidence spans multiple documents without a stable dominant context."
+    if target_mode == "direct":
+        return "Runtime promoted the answer to direct because one document produced enough retrieval-unit evidence for a grounded response."
+    if target_mode == "partial":
+        return "Runtime downgraded the answer to partial because evidence exists but remains incomplete."
+    return ""
 
 
 def _dedupe_preserve_order(values: list[str]) -> list[str]:
