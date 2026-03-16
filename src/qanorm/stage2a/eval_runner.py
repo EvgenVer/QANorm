@@ -60,13 +60,13 @@ class EvalRunReport(BaseModel):
 
     total_questions: int = Field(ge=0)
     scenario_counts: dict[str, int] = Field(default_factory=dict)
-    document_hit_at_3: float = Field(ge=0.0, le=1.0)
-    locator_hit_at_5: float = Field(ge=0.0, le=1.0)
-    grounded_answer_rate: float = Field(ge=0.0, le=1.0)
-    unsupported_claim_rate: float = Field(ge=0.0, le=1.0)
-    partial_answer_rate: float = Field(ge=0.0, le=1.0)
-    expected_mode_match_rate: float = Field(ge=0.0, le=1.0)
-    wrong_document_rate: float = Field(ge=0.0, le=1.0)
+    document_hit_at_3: float = Field(default=0.0, ge=0.0, le=1.0)
+    locator_hit_at_5: float = Field(default=0.0, ge=0.0, le=1.0)
+    grounded_answer_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    unsupported_claim_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    partial_answer_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    expected_mode_match_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    wrong_document_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     question_results: list[EvalQuestionResult] = Field(default_factory=list)
 
 
@@ -642,7 +642,7 @@ def _write_state_file(path: Path, payload: dict[str, Any]) -> None:
 
 def _read_eval_report_file(path: Path) -> EvalRunReport:
     if not path.exists():
-        return EvalRunReport(total_questions=0)
+        return build_eval_report([])
     return EvalRunReport.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
 
