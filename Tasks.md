@@ -147,7 +147,7 @@
 - [x] Провести forensic-разбор оставшихся провалов и отделить retrieval bugs от дефектов корпуса.
 - [x] Зафиксировать, что `ГОСТ 27751-2014` и `СП 1.13130.2020` отсутствуют в canonical `documents`, а `SP 1.0` является placeholder-записью без source/raw linkage.
 - [x] Убрать `SP 1.0` из retrieval candidate set и закрыть short-code prefix leakage вида `СП 1 -> СП 107`.
-- [ ] Подготовить targeted plan repair корпуса: удалить или изолировать placeholder `SP 1.0`, восстановить canonical ingest для `ГОСТ 27751-2014` и `СП 1.13130.2020`, затем пересобрать aliases и retrieval units для этих семейств.
+- [x] Подготовить targeted plan repair корпуса: удалить или изолировать placeholder `SP 1.0`, восстановить canonical ingest для `ГОСТ 27751-2014` и `СП 1.13130.2020`, затем пересобрать aliases и retrieval units для этих семейств.
 
 ## Покрытие плана
 

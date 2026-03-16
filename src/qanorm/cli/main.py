@@ -15,6 +15,7 @@ from qanorm.jobs.worker import run_worker_loop
 from qanorm.services.health import get_health_report
 from qanorm.services.ingestion import check_configuration, run_seed_crawl
 from qanorm.services.metrics import get_ingestion_metrics, get_ingestion_test_run_report
+from qanorm.services.corpus_repair import run_targeted_corpus_repair
 from qanorm.services.refresh_service import request_document_refresh, run_document_refresh
 from qanorm.stage2a.eval_runner import (
     read_stage2a_eval_state,
@@ -71,6 +72,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     update_parser = subparsers.add_parser("update-document", help="Refresh one document immediately.")
     update_parser.add_argument("document_code", help="Canonical or display document code.")
+
+    subparsers.add_parser(
+        "repair-targeted-corpus",
+        help="Repair known missing canonical documents and rebuild Stage 2A data.",
+    )
 
     stage2a_alias_parser = subparsers.add_parser("stage2a-build-aliases", help="Rebuild Stage 2A document aliases.")
     stage2a_alias_parser.add_argument("--document-code", help="Optional canonical document code.", default=None)
@@ -254,6 +260,10 @@ def main() -> None:
 
     if args.command == "update-document":
         print(json.dumps(run_document_refresh(args.document_code), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "repair-targeted-corpus":
+        print(json.dumps(run_targeted_corpus_repair(), ensure_ascii=False, indent=2))
         return
 
     if args.command == "stage2a-build-aliases":
