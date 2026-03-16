@@ -28,9 +28,10 @@ from qanorm.utils.text import normalize_whitespace
 
 _YEAR_RE = re.compile(r"(19|20)\d{2}")
 _TOPIC_DOCUMENT_PRIORS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
-    (("нагруз", "сочетан", "надежн", "предельн", "воздейств"), ("СП 20", "ГОСТ 27751")),
+    (("нагруз", "сочетан", "надежн", "предельн", "воздейств", "коэффициент"), ("СП 20", "ГОСТ 27751")),
     (("тепло", "утепл", "теплопередач", "огражда", "стен", "конденс"), ("СП 50",)),
-    (("эвакуац", "выход", "пожар", "огнестойк", "дым"), ("СП 1", "СП 2", "ФЗ 123")),
+    (("эвакуац", "выход", "пожар", "огнестойк", "дым", "ширин", "отделк"), ("СП 1", "СП 2", "ФЗ 123")),
+    (("кровл", "водосток", "уклон"), ("СП 17",)),
     (("фундамент", "основан", "грунт", "свай", "осад"), ("СП 22", "СП 24")),
     (("арматур", "железобет", "бетон", "плит", "колонн"), ("СП 63",)),
 )
@@ -125,6 +126,17 @@ class RetrievalEngine:
                     score=0.82 + min(alias.confidence, 1.0) * 0.08,
                     reason="prefix_alias",
                     matched_value=alias.alias_raw,
+                )
+
+            for document in self.documents.list_all():
+                if not _document_matches_family(document.display_code, code):
+                    continue
+                self._register_document_candidate(
+                    candidates_by_document,
+                    document,
+                    score=0.9,
+                    reason="explicit_family_fallback",
+                    matched_value=code,
                 )
 
         candidates = self._rerank_document_candidates(query, list(candidates_by_document.values()))
@@ -461,7 +473,9 @@ class RetrievalEngine:
                     else:
                         score -= min(0.24, 0.06 * max(1, latest_year - candidate_year))
             if has_modern_candidate and not query_requests_legacy and _is_legacy_document(candidate.display_code, candidate.title):
-                score -= 0.22
+                score -= 0.32 if not query.explicit_document_codes else 0.26
+            if not query.explicit_document_codes and not query_requests_legacy and _is_legacy_document(candidate.display_code, candidate.title):
+                score -= 0.08
             reranked.append(
                 DocumentCandidate(
                     document_id=candidate.document_id,
@@ -511,7 +525,9 @@ class RetrievalEngine:
             return 0.0
         for family in topic_priors:
             if _document_matches_family(candidate.display_code, family):
-                return 0.18
+                if family in {"ГОСТ 27751", "СП 1", "СП 17", "ФЗ 123"}:
+                    return 0.28
+                return 0.2
         return 0.0
 
     def _load_document_by_version(self, document_version_id: UUID) -> Document | None:

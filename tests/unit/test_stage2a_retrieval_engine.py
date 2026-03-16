@@ -171,3 +171,36 @@ def test_explicit_code_match_bonus_does_not_confuse_short_sp_family_with_longer_
 
     assert sp1_bonus > 0
     assert sp107_bonus == 0
+
+
+def test_resolve_document_uses_family_fallback_for_explicit_gost_query() -> None:
+    retrieval = RetrievalEngine(MagicMock())
+    candidate_document = type(
+        "Document",
+        (),
+        {
+            "id": uuid4(),
+            "display_code": "ГОСТ 27751-2014",
+            "title": "Надежность строительных конструкций и оснований",
+            "current_version": type("Version", (), {"id": uuid4()})(),
+        },
+    )()
+    retrieval.documents.get_by_normalized_code = lambda code: None
+    retrieval.documents.list_all = lambda: [candidate_document]
+    retrieval.documents.get = lambda document_id: candidate_document if document_id == candidate_document.id else None
+    retrieval.document_aliases.list_by_alias_normalized = lambda value: []
+    retrieval.document_aliases.list_by_alias_prefix = lambda value: []
+    query = ParsedQuery(
+        raw_text="Что ГОСТ 27751 говорит про предельные состояния?",
+        normalized_text="Что ГОСТ 27751 говорит про предельные состояния?",
+        explicit_document_codes=["ГОСТ 27751"],
+        explicit_locator_values=[],
+        lexical_query="гост 27751 предельные состояния",
+        lexical_tokens=["гост", "27751", "предельн", "состоян"],
+    )
+
+    resolved = retrieval.resolve_document(query)
+
+    assert resolved
+    assert resolved[0].display_code == "ГОСТ 27751-2014"
+    assert resolved[0].reason in {"explicit_family_fallback", "prefix_alias", "exact_alias"}

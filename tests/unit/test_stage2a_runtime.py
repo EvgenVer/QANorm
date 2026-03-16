@@ -512,3 +512,104 @@ def test_runtime_keeps_direct_for_broad_query_when_one_document_has_strong_conte
     assert result.controller.answer_mode == "direct"
     assert result.answer.mode == "direct"
     assert "promoted the answer to direct" in result.controller.reasoning_summary
+
+
+def test_runtime_promotes_partial_to_direct_when_one_document_dominates_two_document_pack(monkeypatch) -> None:
+    primary = _build_unit_evidence()
+    evidence = primary + [
+        EvidenceItemDTO(
+            evidence_id="ev-0003",
+            source_kind="retrieval_unit_context",
+            document_id=primary[0].document_id,
+            document_version_id=primary[0].document_version_id,
+            document_display_code="SP 63.13330.2018",
+            retrieval_unit_id=uuid4(),
+            locator="10.3.8",
+            heading_path="Section 10 > 10.3",
+            score=0.85,
+            text="More context from the same document.",
+        ),
+        EvidenceItemDTO(
+            evidence_id="ev-0004",
+            source_kind="retrieval_unit_lexical",
+            document_id=uuid4(),
+            document_version_id=uuid4(),
+            document_display_code="SNIP II-90-81",
+            retrieval_unit_id=uuid4(),
+            locator=None,
+            heading_path="Legacy section",
+            score=0.3,
+            text="A weak legacy tail that should not block a direct answer.",
+        ),
+    ]
+
+    class _FakeController:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def run(self, query_text: str):
+            return SimpleNamespace(
+                query_text=query_text,
+                answer_mode="partial",
+                reasoning_summary="Controller stayed conservative due to extra tail evidence.",
+                selected_evidence_ids=[item.evidence_id for item in evidence],
+                evidence=evidence,
+                trajectory={"step": "discover"},
+                policy_hint="discover first",
+                iterations_used=1,
+            )
+
+    class _FakeRetrieval:
+        def parse_query(self, query_text: str):
+            return SimpleNamespace(
+                raw_text=query_text,
+                normalized_text=query_text,
+                explicit_document_codes=[],
+                explicit_locator_values=[],
+                lexical_tokens=["requirements", "reinforcement", "slabs"],
+            )
+
+        def build_evidence_pack(self, query_text: str):
+            return []
+
+    class _FakeComposer:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def compose(self, **kwargs):
+            assert kwargs["answer_mode"] == "direct"
+            return SimpleNamespace(
+                answer_mode="direct",
+                answer_text="Direct grounded answer from the dominant document.",
+                claims=[AnswerClaimDTO(text="Supported claim.", evidence_ids=["ev-0001"])],
+                evidence=evidence,
+                limitations=[],
+            )
+
+    class _FakeVerifier:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def verify(self, **kwargs):
+            return Stage2AAnswerDTO(
+                mode="direct",
+                answer_text="Verified direct answer.",
+                claims=[AnswerClaimDTO(text="Supported claim.", evidence_ids=["ev-0001"])],
+                evidence=evidence,
+                limitations=[],
+            )
+
+    runtime = Stage2ARuntime(
+        session_factory=_FakeSessionFactory(),
+        model_bundle=SimpleNamespace(controller=object(), composer=object(), verifier=object(), reranker=object(), provider_name="gemini"),
+        controller_factory=_FakeController,
+        composer_factory=_FakeComposer,
+        verifier_factory=_FakeVerifier,
+    )
+
+    monkeypatch.setattr("qanorm.stage2a.runtime.RetrievalEngine", lambda session: _FakeRetrieval())
+
+    result = runtime.answer_query("What requirements apply to slab reinforcement?")
+
+    assert result.controller.answer_mode == "direct"
+    assert result.answer.mode == "direct"

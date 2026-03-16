@@ -293,12 +293,18 @@ def _suggest_answer_mode_from_evidence(
         retrieval_unit_count >= config.retrieval.min_direct_answer_evidence
         or (retrieval_unit_count >= 1 and (has_locator or dominant_document_hits >= 3 or len(evidence) >= 4))
     )
+    dominant_context_direct = (
+        len(unique_documents) <= 2
+        and retrieval_unit_count >= config.retrieval.min_direct_answer_evidence
+        and dominant_document_hits >= 3
+        and (has_locator or explicit_document or len(evidence) >= 4)
+    )
 
     if _should_clarify(parsed_query=parsed_query, evidence=evidence):
         return "clarify"
 
     if current_mode in {"no_answer", "clarify", "partial"}:
-        if strong_single_document:
+        if strong_single_document or dominant_context_direct:
             if explicit_document or explicit_locator or has_locator or current_mode != "partial":
                 return "direct"
         if evidence and current_mode == "no_answer":
@@ -316,6 +322,8 @@ def _should_clarify(*, parsed_query: ParsedQuery, evidence: list[EvidenceItemDTO
     retrieval_unit_count = sum(1 for item in evidence if item.retrieval_unit_id is not None)
     if _AMBIGUOUS_QUERY_RE.search(parsed_query.raw_text):
         if unique_document_count <= 1 and (has_locator or retrieval_unit_count >= 1 or dominant_document_hits >= 2):
+            return False
+        if unique_document_count == 2 and retrieval_unit_count >= 2 and dominant_document_hits >= 3:
             return False
         return True
     if len(parsed_query.lexical_tokens) > 4:
