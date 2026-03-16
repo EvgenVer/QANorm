@@ -9,8 +9,8 @@
 - `Stage 2A MVP` собран и проходит ручное тестирование;
 - базовый eval-прогон на `150` вопросах уже выполнен;
 - baseline-метрики первого полного eval: `document hit@3 = 0.74`, `locator hit@5 = 0.00`, `expected mode match rate = 0.66`, `partial answer rate = 0.1933`;
-- актуальные метрики после финального remediation-cycle и повторного parallel eval: `document hit@3 = 0.86`, `locator hit@5 = 1.00`, `grounded answer rate = 0.98`, `expected mode match rate = 0.72`, `partial answer rate = 0.0867`, `wrong document rate = 0.00`;
-- текущая точка остановки: `H4` закрыт частично; document retrieval и locator retrieval уже выше порога, но нужен еще один короткий remediation-cycle по `expected mode match rate`, после чего можно готовить итоговый readiness report.
+- финальные метрики после `H5` и чистого parallel eval `v5`: `document hit@3 = 0.9267`, `locator hit@5 = 1.00`, `grounded answer rate = 1.00`, `expected mode match rate = 0.7867`, `partial answer rate = 0.0467`, `wrong document rate = 0.00`;
+- `Stage 2A MVP` проходит все зафиксированные acceptance thresholds и готов к приемке; открытых implementation-задач не осталось.
 
 ## Stage 1
 
@@ -108,7 +108,7 @@
 - [x] Реализовать прогон eval-набора и сбор метрик качества.
 - [x] Зафиксировать `document hit@3`, `locator hit@5`, `grounded answer rate`, `unsupported claim rate`, `partial answer rate`.
 - [x] Зафиксировать eval-набор как основу для следующей итерации DSPy optimization.
-- [ ] Подготовить краткий MVP readiness report.
+- [x] Подготовить краткий MVP readiness report.
 
 ### Блок H1. Исправление document ranking и edition drift
 
@@ -139,8 +139,8 @@
 - [x] Прогнать targeted eval по сценариям `explicit document without locator`, `compact alias / dirty input`, `ambiguous_scenario`, `diagnostic_locator_hidden`.
 - [x] Прогнать полный eval-набор на `150` вопросах после исправлений.
 - [x] Сравнить baseline и post-fix метрики, зафиксировать прирост и оставшиеся провалы.
-- [ ] Если `document hit@3 < 0.85` или `locator hit@5 < 0.70` или `expected mode match rate < 0.75`, завести еще один короткий remediation-cycle до readiness report.
-- [ ] Подготовить итоговый MVP readiness report с финальными метриками, списком известных ограничений и рекомендациями для следующей итерации DSPy optimization.
+- [x] Если `document hit@3 < 0.85` или `locator hit@5 < 0.70` или `expected mode match rate < 0.75`, завести еще один короткий remediation-cycle до readiness report.
+- [x] Подготовить итоговый MVP readiness report с финальными метриками, списком известных ограничений и рекомендациями для следующей итерации DSPy optimization.
 
 ### Блок H5. Corpus repair для отсутствующих canonical-документов
 
