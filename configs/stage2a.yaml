@@ -15,9 +15,9 @@ stage2a:
   # - strongest tool-use controller on the freshest available lineup
   # - stable 2.5 models for answer and verification to keep MVP predictable
   models:
-    controller: gemini-2.5-pro
-    composer: gemini-3-flash-preview
-    verifier: gemini-3-flash-preview
+    controller: gemini-3.1-flash-lite-preview
+    composer: gemini-3.1-flash-lite-preview
+    verifier: gemini-3.1-flash-lite-preview
     reranker: gemini-3.1-flash-lite-preview
     embeddings: gemini-embedding-2-preview
 
