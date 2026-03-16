@@ -51,3 +51,17 @@
 - точные locator-кейсы держатся только в `diagnostic_locator_hidden`;
 - набор должен быть смещен в сторону реальных инженерных вопросов, где система сама определяет, что искать;
 - приоритет — проверять актуальные нормы, а не способность повторять старые документы и пособия.
+
+## Target Thresholds
+
+Для `Stage 2A MVP` фиксируются следующие целевые метрики полного прогона:
+
+- `document hit@3 >= 0.85`
+- `locator hit@5 >= 0.70`
+- `grounded answer rate >= 0.95`
+- `unsupported claim rate <= 0.05`
+- `partial answer rate <= 0.25`
+- `expected mode match rate >= 0.75`
+- `wrong document rate <= 0.10`
+
+Эти пороги используются как рабочие acceptance thresholds для `Block H` и для следующей итерации улучшений retrieval/agent runtime.

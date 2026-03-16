@@ -102,7 +102,7 @@
 - [x] Разбить eval-набор на `no explicit norm engineering`, `explicit document without locator`, `compact alias / dirty input`, `ambiguous scenarios` и небольшой hidden diagnostic slice для locator retrieval.
 - [x] Не использовать точные пункты/таблицы/формулы как основной тип eval-вопросов; оставить их только в техническом diagnostic sub-set.
 - [x] Реализовать прогон eval-набора и сбор метрик качества.
-- [ ] Зафиксировать `document hit@3`, `locator hit@5`, `grounded answer rate`, `unsupported claim rate`, `partial answer rate`.
+- [x] Зафиксировать `document hit@3`, `locator hit@5`, `grounded answer rate`, `unsupported claim rate`, `partial answer rate`.
 - [ ] Зафиксировать eval-набор как основу для следующей итерации DSPy optimization.
 - [ ] Исправить критические провалы по результатам eval.
 - [ ] Подготовить краткий MVP readiness report.
