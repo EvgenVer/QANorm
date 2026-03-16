@@ -140,6 +140,26 @@ def test_build_eval_report_aggregates_expected_metrics() -> None:
     assert report.expected_mode_match_rate == 1.0
 
 
+def test_score_eval_result_counts_latest_edition_as_family_hit_by_default() -> None:
+    question = load_eval_questions(EVAL_PATH)[24]
+    result = _build_query_result(mode="direct", document_code="СП 50.13330.2024")
+
+    scored = score_eval_result(question, result)
+
+    assert scored.document_hit is True
+    assert scored.document_match_mode == "family"
+
+
+def test_score_eval_result_can_require_exact_edition() -> None:
+    question = load_eval_questions(EVAL_PATH)[24].model_copy(update={"require_exact_edition": True})
+    result = _build_query_result(mode="direct", document_code="СП 50.13330.2024")
+
+    scored = score_eval_result(question, result)
+
+    assert scored.document_hit is False
+    assert scored.document_match_mode == "exact"
+
+
 def test_run_stage2a_eval_uses_runtime_factory(tmp_path: Path) -> None:
     path = tmp_path / "questions.jsonl"
     path.write_text(

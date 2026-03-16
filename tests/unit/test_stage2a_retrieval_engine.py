@@ -4,7 +4,8 @@ from uuid import uuid4
 
 from unittest.mock import MagicMock
 
-from qanorm.stage2a.retrieval.engine import RetrievalEngine, RetrievalHit
+from qanorm.stage2a.retrieval.engine import DocumentCandidate, RetrievalEngine, RetrievalHit
+from qanorm.stage2a.retrieval.query_parser import ParsedQuery
 
 
 def test_merge_and_rerank_hits_prefers_contextual_retrieval_unit_over_weak_node_locator() -> None:
@@ -85,3 +86,49 @@ def test_merge_and_rerank_hits_prioritizes_retrieval_unit_context_over_document_
     )
 
     assert reranked[0].source_kind == "retrieval_unit_context"
+
+
+def test_rerank_document_candidates_prefers_latest_edition_when_query_has_no_year() -> None:
+    retrieval = RetrievalEngine(MagicMock())
+    latest_version = uuid4()
+    old_version = uuid4()
+    retrieval.document_versions.get = lambda version_id: type(
+        "Version",
+        (),
+        {
+            "is_active": version_id == latest_version,
+            "is_outdated": version_id == old_version,
+        },
+    )()
+    query = ParsedQuery(
+        raw_text="Что СП 50 говорит про конденсацию влаги?",
+        normalized_text="Что СП 50 говорит про конденсацию влаги?",
+        explicit_document_codes=["СП 50"],
+        explicit_locator_values=[],
+        lexical_query="сп 50 конденсация влаги",
+        lexical_tokens=["сп", "50", "конденсац", "влаг"],
+    )
+    candidates = [
+        DocumentCandidate(
+            document_id=uuid4(),
+            document_version_id=old_version,
+            score=1.0,
+            reason="prefix_alias",
+            matched_value="СП 50.13330.2012",
+            display_code="СП 50.13330.2012",
+            title="Тепловая защита зданий",
+        ),
+        DocumentCandidate(
+            document_id=uuid4(),
+            document_version_id=latest_version,
+            score=0.96,
+            reason="prefix_alias",
+            matched_value="СП 50.13330.2024",
+            display_code="СП 50.13330.2024",
+            title="Тепловая защита зданий",
+        ),
+    ]
+
+    reranked = retrieval._rerank_document_candidates(query, candidates)
+
+    assert reranked[0].display_code == "СП 50.13330.2024"

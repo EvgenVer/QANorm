@@ -430,8 +430,16 @@ class RetrievalEngine:
             return []
 
         query_requests_legacy = any(code.startswith(("СНИП", "СНиП", "SNIP")) for code in query.explicit_document_codes)
+        query_requests_exact_edition = any(_extract_year(code) is not None for code in query.explicit_document_codes)
         topic_priors = _topic_document_priors(query)
         has_modern_candidate = any(not _is_legacy_document(item.display_code, item.title) for item in candidates)
+        latest_year_by_family: dict[str, int] = {}
+        for candidate in candidates:
+            family = _document_family(candidate.display_code)
+            year = _extract_year(normalize_document_code(candidate.display_code))
+            if year is None:
+                continue
+            latest_year_by_family[family] = max(latest_year_by_family.get(family, year), year)
         reranked: list[DocumentCandidate] = []
         for candidate in candidates:
             score = candidate.score
@@ -443,6 +451,15 @@ class RetrievalEngine:
                     score += 0.1
                 if version.is_outdated:
                     score -= 0.18
+            if not query_requests_exact_edition:
+                family = _document_family(candidate.display_code)
+                candidate_year = _extract_year(normalize_document_code(candidate.display_code))
+                latest_year = latest_year_by_family.get(family)
+                if latest_year is not None and candidate_year is not None:
+                    if candidate_year == latest_year:
+                        score += 0.16
+                    else:
+                        score -= min(0.24, 0.06 * max(1, latest_year - candidate_year))
             if has_modern_candidate and not query_requests_legacy and _is_legacy_document(candidate.display_code, candidate.title):
                 score -= 0.22
             reranked.append(
@@ -665,6 +682,11 @@ def _topic_document_priors(query: ParsedQuery) -> set[str]:
 
 def _document_matches_family(display_code: str, family: str) -> bool:
     return normalize_document_code(display_code).startswith(normalize_document_code(family))
+
+
+def _document_family(display_code: str | None) -> str:
+    normalized = normalize_document_code(display_code or "")
+    return re.sub(r"([.\-/])\d{4}$", "", normalized)
 
 
 def _is_legacy_document(display_code: str | None, title: str | None) -> bool:

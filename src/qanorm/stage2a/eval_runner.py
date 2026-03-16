@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 import json
 import logging
 import os
+import re
 from collections import Counter
 from pathlib import Path
 import subprocess
@@ -15,6 +16,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, Field
 
+from qanorm.normalizers.codes import normalize_document_code
 from qanorm.settings import PROJECT_ROOT, get_settings
 from qanorm.stage2a.runtime import Stage2AQueryResult, Stage2ARuntime
 
@@ -28,6 +30,7 @@ class EvalQuestion(BaseModel):
     expected_mode: str = Field(min_length=1)
     expected_documents: list[str] = Field(default_factory=list)
     expected_locators: list[str] = Field(default_factory=list)
+    require_exact_edition: bool = False
     must_include_terms: list[str] = Field(default_factory=list)
     must_not_use_documents: list[str] = Field(default_factory=list)
     notes: str = ""
@@ -45,6 +48,7 @@ class EvalQuestionResult(BaseModel):
     expected_documents: list[str] = Field(default_factory=list)
     actual_documents: list[str] = Field(default_factory=list)
     document_hit: bool = False
+    document_match_mode: str = "family"
     expected_locators: list[str] = Field(default_factory=list)
     actual_locators: list[str] = Field(default_factory=list)
     locator_hit: bool | None = None
@@ -113,12 +117,19 @@ def score_eval_result(question: EvalQuestion, result: Stage2AQueryResult) -> Eva
         limit=5,
     )
     normalized_actual_documents = {_normalize_text(value) for value in actual_documents}
+    normalized_actual_families = {_normalize_document_family(value) for value in actual_documents}
     normalized_actual_locators = {_normalize_text(value) for value in actual_locators}
     expected_documents = [_normalize_text(value) for value in question.expected_documents]
+    expected_families = {_normalize_document_family(value) for value in question.expected_documents}
     expected_locators = [_normalize_text(value) for value in question.expected_locators]
     forbidden_documents = {_normalize_text(value) for value in question.must_not_use_documents}
-
-    document_hit = not expected_documents or any(value in normalized_actual_documents for value in expected_documents)
+    requires_exact = question.require_exact_edition
+    if not expected_documents:
+        document_hit = True
+    elif requires_exact:
+        document_hit = any(value in normalized_actual_documents for value in expected_documents)
+    else:
+        document_hit = any(value in normalized_actual_families for value in expected_families)
     locator_hit = None
     if expected_locators:
         locator_hit = any(value in normalized_actual_locators for value in expected_locators)
@@ -136,6 +147,7 @@ def score_eval_result(question: EvalQuestion, result: Stage2AQueryResult) -> Eva
         expected_documents=question.expected_documents,
         actual_documents=actual_documents,
         document_hit=document_hit,
+        document_match_mode="exact" if requires_exact else "family",
         expected_locators=question.expected_locators,
         actual_locators=actual_locators,
         locator_hit=locator_hit,
@@ -546,6 +558,12 @@ def _top_unique_values(values: list[str], *, limit: int) -> list[str]:
 
 def _normalize_text(value: str) -> str:
     return " ".join(str(value).lower().split())
+
+
+def _normalize_document_family(value: str) -> str:
+    normalized = normalize_document_code(str(value))
+    normalized = re.sub(r"([.\-/])\d{4}$", "", normalized)
+    return _normalize_text(normalized)
 
 
 def _ratio(numerator: int, denominator: int) -> float:
