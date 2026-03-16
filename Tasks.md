@@ -8,8 +8,9 @@
 - старый Stage 2 удален;
 - `Stage 2A MVP` собран и проходит ручное тестирование;
 - базовый eval-прогон на `150` вопросах уже выполнен;
-- текущие baseline-метрики: `document hit@3 = 0.74`, `locator hit@5 = 0.00`, `expected mode match rate = 0.66`, `partial answer rate = 0.1933`;
-- следующий шаг проекта: исправить критические провалы eval и довести MVP до приемки.
+- baseline-метрики первого полного eval: `document hit@3 = 0.74`, `locator hit@5 = 0.00`, `expected mode match rate = 0.66`, `partial answer rate = 0.1933`;
+- актуальные метрики после финального remediation-cycle и повторного parallel eval: `document hit@3 = 0.86`, `locator hit@5 = 1.00`, `grounded answer rate = 0.98`, `expected mode match rate = 0.72`, `partial answer rate = 0.0867`, `wrong document rate = 0.00`;
+- текущая точка остановки: `H4` закрыт частично; document retrieval и locator retrieval уже выше порога, но нужен еще один короткий remediation-cycle по `expected mode match rate`, после чего можно готовить итоговый readiness report.
 
 ## Stage 1
 
@@ -135,9 +136,9 @@
 
 ### Блок H4. Цикл повторной оценки и приемка
 
-- [ ] Прогнать targeted eval по сценариям `explicit document without locator`, `compact alias / dirty input`, `ambiguous_scenario`, `diagnostic_locator_hidden`.
-- [ ] Прогнать полный eval-набор на `150` вопросах после исправлений.
-- [ ] Сравнить baseline и post-fix метрики, зафиксировать прирост и оставшиеся провалы.
+- [x] Прогнать targeted eval по сценариям `explicit document without locator`, `compact alias / dirty input`, `ambiguous_scenario`, `diagnostic_locator_hidden`.
+- [x] Прогнать полный eval-набор на `150` вопросах после исправлений.
+- [x] Сравнить baseline и post-fix метрики, зафиксировать прирост и оставшиеся провалы.
 - [ ] Если `document hit@3 < 0.85` или `locator hit@5 < 0.70` или `expected mode match rate < 0.75`, завести еще один короткий remediation-cycle до readiness report.
 - [ ] Подготовить итоговый MVP readiness report с финальными метриками, списком известных ограничений и рекомендациями для следующей итерации DSPy optimization.
 

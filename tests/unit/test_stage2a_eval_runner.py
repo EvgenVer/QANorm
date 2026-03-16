@@ -160,6 +160,15 @@ def test_score_eval_result_can_require_exact_edition() -> None:
     assert scored.document_match_mode == "exact"
 
 
+def test_score_eval_result_treats_clarify_as_neutral_for_grounded_metric() -> None:
+    question = load_eval_questions(EVAL_PATH)[47]
+    result = _build_query_result(mode="clarify", document_code="СП 63.13330.2018")
+
+    scored = score_eval_result(question, result)
+
+    assert scored.grounded_answer is True
+
+
 def test_run_stage2a_eval_uses_runtime_factory(tmp_path: Path) -> None:
     path = tmp_path / "questions.jsonl"
     path.write_text(

@@ -135,7 +135,9 @@ def score_eval_result(question: EvalQuestion, result: Stage2AQueryResult) -> Eva
         locator_hit = any(value in normalized_actual_locators for value in expected_locators)
 
     unsupported_claim = any((not claim.supported) or (not claim.evidence_ids) for claim in answer.claims)
-    grounded_answer = answer.mode in {"direct", "partial"} and bool(answer.evidence) and not unsupported_claim
+    grounded_answer = answer.mode == "clarify" or (
+        answer.mode in {"direct", "partial"} and bool(answer.evidence) and not unsupported_claim
+    )
     actual_mode = answer.mode
     return EvalQuestionResult(
         question_id=question.id,

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from uuid import uuid4
-
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 from qanorm.stage2a.retrieval.engine import DocumentCandidate, RetrievalEngine, RetrievalHit
 from qanorm.stage2a.retrieval.query_parser import ParsedQuery
@@ -22,8 +21,8 @@ def test_merge_and_rerank_hits_prefers_contextual_retrieval_unit_over_weak_node_
         retrieval_unit_id=None,
         order_index=2,
         locator="1.1",
-        heading_path="Раздел 1",
-        text="Требование по нагрузкам",
+        heading_path="Section 1",
+        text="Requirement about loads.",
     )
     lexical_hit = RetrievalHit(
         source_kind="retrieval_unit_lexical",
@@ -34,8 +33,8 @@ def test_merge_and_rerank_hits_prefers_contextual_retrieval_unit_over_weak_node_
         retrieval_unit_id=uuid4(),
         order_index=1,
         locator=None,
-        heading_path="Раздел 1",
-        text="Нагрузки и воздействия",
+        heading_path="Section 1",
+        text="Loads and actions.",
     )
 
     reranked = retrieval.merge_and_rerank_hits(
@@ -132,3 +131,43 @@ def test_rerank_document_candidates_prefers_latest_edition_when_query_has_no_yea
     reranked = retrieval._rerank_document_candidates(query, candidates)
 
     assert reranked[0].display_code == "СП 50.13330.2024"
+
+
+def test_explicit_code_match_bonus_does_not_confuse_short_sp_family_with_longer_code() -> None:
+    retrieval = RetrievalEngine(MagicMock())
+    query = ParsedQuery(
+        raw_text="Что СП 1 говорит про эвакуационные выходы?",
+        normalized_text="Что СП 1 говорит про эвакуационные выходы?",
+        explicit_document_codes=["СП 1"],
+        explicit_locator_values=[],
+        lexical_query="сп 1 эвакуационные выходы",
+        lexical_tokens=["сп", "1", "эвакуацион", "выход"],
+    )
+
+    sp1_bonus = retrieval._explicit_code_match_bonus(
+        query,
+        DocumentCandidate(
+            document_id=uuid4(),
+            document_version_id=uuid4(),
+            score=1.0,
+            reason="prefix_alias",
+            matched_value="СП 1",
+            display_code="СП 1.13130.2020",
+            title="Системы противопожарной защиты. Эвакуационные пути и выходы",
+        ),
+    )
+    sp107_bonus = retrieval._explicit_code_match_bonus(
+        query,
+        DocumentCandidate(
+            document_id=uuid4(),
+            document_version_id=uuid4(),
+            score=1.0,
+            reason="prefix_alias",
+            matched_value="СП 107",
+            display_code="СП 107.13330.2012",
+            title="Теплицы и парники",
+        ),
+    )
+
+    assert sp1_bonus > 0
+    assert sp107_bonus == 0

@@ -494,10 +494,12 @@ class RetrievalEngine:
             if candidate_code == normalized_code:
                 best_bonus = max(best_bonus, 0.35)
                 continue
-            if candidate_code.startswith(normalized_code):
+            if _shares_document_family(candidate_code, normalized_code) and candidate_code.startswith(normalized_code):
                 best_bonus = max(best_bonus, 0.22)
-            elif normalized_code.startswith(candidate_code):
+            elif _shares_document_family(candidate_code, normalized_code) and normalized_code.startswith(candidate_code):
                 best_bonus = max(best_bonus, 0.14)
+            elif _shares_document_family(candidate_code, normalized_code):
+                best_bonus = max(best_bonus, 0.18)
 
             query_year = _extract_year(normalized_code)
             if query_year and candidate_year and query_year != candidate_year:
@@ -681,12 +683,21 @@ def _topic_document_priors(query: ParsedQuery) -> set[str]:
 
 
 def _document_matches_family(display_code: str, family: str) -> bool:
-    return normalize_document_code(display_code).startswith(normalize_document_code(family))
+    return _document_family(display_code) == _document_family(family)
 
 
 def _document_family(display_code: str | None) -> str:
     normalized = normalize_document_code(display_code or "")
+    family_match = re.match(r"^([A-ZА-ЯЁ]+)\s*(\d+)", normalized)
+    if family_match:
+        return f"{family_match.group(1)}{family_match.group(2)}"
     return re.sub(r"([.\-/])\d{4}$", "", normalized)
+
+
+def _shares_document_family(left: str | None, right: str | None) -> bool:
+    if not left or not right:
+        return False
+    return _document_family(left) == _document_family(right)
 
 
 def _is_legacy_document(display_code: str | None, title: str | None) -> bool:

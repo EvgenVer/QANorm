@@ -422,3 +422,93 @@ def test_runtime_switches_to_clarify_for_broad_multi_document_query(monkeypatch)
     assert result.answer.mode == "clarify"
     assert "switched the answer to clarify" in result.controller.reasoning_summary
     assert any("вопрос слишком широкий" in item for item in result.answer.limitations)
+
+
+def test_runtime_keeps_direct_for_broad_query_when_one_document_has_strong_context(monkeypatch) -> None:
+    base_evidence = _build_unit_evidence()
+    evidence = base_evidence + [
+        EvidenceItemDTO(
+            evidence_id="ev-0003",
+            source_kind="retrieval_unit_context",
+            document_id=base_evidence[0].document_id,
+            document_version_id=base_evidence[0].document_version_id,
+            document_display_code="SP 63.13330.2018",
+            retrieval_unit_id=uuid4(),
+            locator="10.3.9",
+            heading_path="Section 10 > 10.3",
+            score=0.88,
+            text="Additional contextual block from the same document.",
+        )
+    ]
+
+    class _FakeController:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def run(self, query_text: str):
+            return SimpleNamespace(
+                query_text=query_text,
+                answer_mode="clarify",
+                reasoning_summary="Controller asked for clarification too early.",
+                selected_evidence_ids=[item.evidence_id for item in evidence],
+                evidence=evidence,
+                trajectory={"step": "discover"},
+                policy_hint="discover first",
+                iterations_used=1,
+            )
+
+    class _FakeRetrieval:
+        def parse_query(self, query_text: str):
+            return SimpleNamespace(
+                raw_text=query_text,
+                normalized_text=query_text,
+                explicit_document_codes=[],
+                explicit_locator_values=[],
+                lexical_tokens=["what", "requirements", "slabs"],
+            )
+
+        def build_evidence_pack(self, query_text: str):
+            return []
+
+    class _FakeComposer:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def compose(self, **kwargs):
+            assert kwargs["answer_mode"] == "direct"
+            return SimpleNamespace(
+                answer_mode="direct",
+                answer_text="Direct grounded answer.",
+                claims=[AnswerClaimDTO(text="Supported claim.", evidence_ids=["ev-0001"])],
+                evidence=evidence,
+                limitations=[],
+            )
+
+    class _FakeVerifier:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def verify(self, **kwargs):
+            return Stage2AAnswerDTO(
+                mode="direct",
+                answer_text="Verified direct answer.",
+                claims=[AnswerClaimDTO(text="Supported claim.", evidence_ids=["ev-0001"])],
+                evidence=evidence,
+                limitations=[],
+            )
+
+    runtime = Stage2ARuntime(
+        session_factory=_FakeSessionFactory(),
+        model_bundle=SimpleNamespace(controller=object(), composer=object(), verifier=object(), reranker=object(), provider_name="gemini"),
+        controller_factory=_FakeController,
+        composer_factory=_FakeComposer,
+        verifier_factory=_FakeVerifier,
+    )
+
+    monkeypatch.setattr("qanorm.stage2a.runtime.RetrievalEngine", lambda session: _FakeRetrieval())
+
+    result = runtime.answer_query("What requirements apply to slab reinforcement?")
+
+    assert result.controller.answer_mode == "direct"
+    assert result.answer.mode == "direct"
+    assert "promoted the answer to direct" in result.controller.reasoning_summary

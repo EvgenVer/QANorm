@@ -283,17 +283,23 @@ def _suggest_answer_mode_from_evidence(
         return current_mode
 
     retrieval_unit_count = sum(1 for item in evidence if item.retrieval_unit_id is not None)
-    unique_documents = {item.document_display_code for item in evidence if item.document_display_code}
+    document_counts = _document_counts(evidence)
+    unique_documents = set(document_counts)
+    dominant_document_hits = max(document_counts.values()) if document_counts else 0
     has_locator = any(bool(item.locator) for item in evidence)
     explicit_document = bool(parsed_query.explicit_document_codes)
     explicit_locator = bool(parsed_query.explicit_locator_values)
+    strong_single_document = len(unique_documents) == 1 and (
+        retrieval_unit_count >= config.retrieval.min_direct_answer_evidence
+        or (retrieval_unit_count >= 1 and (has_locator or dominant_document_hits >= 3 or len(evidence) >= 4))
+    )
 
     if _should_clarify(parsed_query=parsed_query, evidence=evidence):
         return "clarify"
 
     if current_mode in {"no_answer", "clarify", "partial"}:
-        if retrieval_unit_count >= config.retrieval.min_direct_answer_evidence and len(unique_documents) == 1:
-            if explicit_document or explicit_locator or has_locator:
+        if strong_single_document:
+            if explicit_document or explicit_locator or has_locator or current_mode != "partial":
                 return "direct"
         if evidence and current_mode == "no_answer":
             return "partial"
@@ -303,19 +309,18 @@ def _suggest_answer_mode_from_evidence(
 def _should_clarify(*, parsed_query: ParsedQuery, evidence: list[EvidenceItemDTO]) -> bool:
     if parsed_query.explicit_document_codes or parsed_query.explicit_locator_values:
         return False
+    document_counts = _document_counts(evidence)
+    unique_document_count = len(document_counts)
+    dominant_document_hits = max(document_counts.values()) if document_counts else 0
+    has_locator = any(bool(item.locator) for item in evidence)
+    retrieval_unit_count = sum(1 for item in evidence if item.retrieval_unit_id is not None)
     if _AMBIGUOUS_QUERY_RE.search(parsed_query.raw_text):
+        if unique_document_count <= 1 and (has_locator or retrieval_unit_count >= 1 or dominant_document_hits >= 2):
+            return False
         return True
     if len(parsed_query.lexical_tokens) > 4:
         return False
 
-    document_counts: dict[str, int] = {}
-    for item in evidence:
-        if not item.document_display_code:
-            continue
-        document_counts[item.document_display_code] = document_counts.get(item.document_display_code, 0) + 1
-    unique_document_count = len(document_counts)
-    dominant_document_hits = max(document_counts.values()) if document_counts else 0
-    has_locator = any(bool(item.locator) for item in evidence)
     if unique_document_count >= 2 and dominant_document_hits < 2 and not has_locator:
         return True
     return False
@@ -329,6 +334,15 @@ def _runtime_policy_reason(*, parsed_query: ParsedQuery, evidence: list[Evidence
     if target_mode == "partial":
         return "Runtime downgraded the answer to partial because evidence exists but remains incomplete."
     return ""
+
+
+def _document_counts(evidence: list[EvidenceItemDTO]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in evidence:
+        if not item.document_display_code:
+            continue
+        counts[item.document_display_code] = counts.get(item.document_display_code, 0) + 1
+    return counts
 
 
 def _dedupe_preserve_order(values: list[str]) -> list[str]:
