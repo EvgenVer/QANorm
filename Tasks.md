@@ -97,9 +97,11 @@
 
 ### Блок H. Eval и приемка MVP
 
-- [ ] Собрать локальный eval-набор из `50-100` реальных вопросов.
-- [ ] Разбить eval-набор на explicit document, explicit locator, no explicit norm и ambiguous scenarios.
-- [ ] Реализовать прогон eval-набора и сбор метрик качества.
+- [x] Собрать локальный eval-набор из `150` реальных вопросов.
+- [x] Сделать основной фокус eval-набора на инженерных вопросах, в которых система должна сама понять, какие нормы искать.
+- [x] Разбить eval-набор на `no explicit norm engineering`, `explicit document without locator`, `compact alias / dirty input`, `ambiguous scenarios` и небольшой hidden diagnostic slice для locator retrieval.
+- [x] Не использовать точные пункты/таблицы/формулы как основной тип eval-вопросов; оставить их только в техническом diagnostic sub-set.
+- [x] Реализовать прогон eval-набора и сбор метрик качества.
 - [ ] Зафиксировать `document hit@3`, `locator hit@5`, `grounded answer rate`, `unsupported claim rate`, `partial answer rate`.
 - [ ] Зафиксировать eval-набор как основу для следующей итерации DSPy optimization.
 - [ ] Исправить критические провалы по результатам eval.

@@ -29,8 +29,8 @@ def test_build_stage2a_dspy_models_bootstraps_gemini(monkeypatch: pytest.MonkeyP
     bundle = build_stage2a_dspy_models(config)
 
     assert bundle.provider_name == "gemini"
-    assert bundle.controller.model == "gemini/gemini-2.5-pro"
-    assert bundle.composer.model == "gemini/gemini-3-flash-preview"
+    assert bundle.controller.model == f"gemini/{config.models.controller}"
+    assert bundle.composer.model == f"gemini/{config.models.composer}"
     assert bundle.verifier.kwargs["timeout"] == 90
     assert bundle.reranker.kwargs["num_retries"] == 4
     assert bundle.controller.kwargs["api_key"] == "test-key"

@@ -16,6 +16,7 @@ from qanorm.services.health import get_health_report
 from qanorm.services.ingestion import check_configuration, run_seed_crawl
 from qanorm.services.metrics import get_ingestion_metrics, get_ingestion_test_run_report
 from qanorm.services.refresh_service import request_document_refresh, run_document_refresh
+from qanorm.stage2a.eval_runner import run_stage2a_eval
 from qanorm.stage2a.indexing.backfill import (
     backfill_derived_retrieval_data_worker,
     backfill_retrieval_unit_embeddings,
@@ -139,6 +140,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     stage2a_embed_worker_parser.add_argument("--state-path", required=True)
     stage2a_embed_worker_parser.add_argument("--log-path", required=True)
+
+    stage2a_eval_parser = subparsers.add_parser(
+        "stage2a-eval",
+        help="Run the Stage 2A eval set and print aggregated metrics.",
+    )
+    stage2a_eval_parser.add_argument(
+        "--questions-path",
+        default=str(Path(__file__).resolve().parents[3] / "eval" / "stage2a" / "questions.jsonl"),
+        help="Path to the Stage 2A eval JSONL file.",
+    )
+    stage2a_eval_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Optional number of questions to run from the beginning of the eval set.",
+    )
 
     return parser
 
@@ -322,6 +339,14 @@ def main() -> None:
                 indent=2,
             )
         )
+        return
+
+    if args.command == "stage2a-eval":
+        report = run_stage2a_eval(
+            questions_path=args.questions_path,
+            limit=args.limit,
+        )
+        print(json.dumps(report.model_dump(mode="json"), ensure_ascii=False, indent=2))
         return
 
     parser.print_help()
