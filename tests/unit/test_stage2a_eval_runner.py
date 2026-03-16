@@ -5,7 +5,15 @@ from pathlib import Path
 from uuid import uuid4
 
 from qanorm.stage2a.contracts import AnswerClaimDTO, EvidenceItemDTO, Stage2AAnswerDTO
-from qanorm.stage2a.eval_runner import build_eval_report, load_eval_questions, run_stage2a_eval, score_eval_result
+from qanorm.stage2a.eval_runner import (
+    EvalQuestion,
+    EvalRunReport,
+    build_eval_report,
+    load_eval_questions,
+    read_stage2a_eval_state,
+    run_stage2a_eval,
+    score_eval_result,
+)
 from qanorm.stage2a.runtime import Stage2AQueryResult
 from qanorm.stage2a.agents import ControllerAgentResult
 
@@ -162,3 +170,115 @@ def test_run_stage2a_eval_uses_runtime_factory(tmp_path: Path) -> None:
     assert report.total_questions == 1
     assert report.document_hit_at_3 == 1.0
     assert report.grounded_answer_rate == 1.0
+
+
+def test_run_stage2a_eval_filters_by_scenario() -> None:
+    class _FakeRuntime:
+        def answer_query(self, query_text: str) -> Stage2AQueryResult:
+            return _build_query_result(mode="direct", document_code="СП 63.13330.2018")
+
+    report = run_stage2a_eval(
+        questions_path=EVAL_PATH,
+        scenario="compact_alias_dirty_input",
+        runtime_factory=_FakeRuntime,
+    )
+
+    assert report.total_questions == 15
+    assert report.scenario_counts == {"compact_alias_dirty_input": 15}
+
+
+def test_read_stage2a_eval_state_aggregates_parallel_reports(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    state_one = tmp_path / "eval_state.shard-01.json"
+    state_two = tmp_path / "eval_state.shard-02.json"
+    report_one = tmp_path / "eval_report.shard-01.json"
+    report_two = tmp_path / "eval_report.shard-02.json"
+
+    state_one.write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "processed_questions": 1,
+                "remaining_questions": 0,
+                "target_questions": 1,
+                "report_path": str(report_one),
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    state_two.write_text(
+        json.dumps(
+            {
+                "status": "running",
+                "processed_questions": 1,
+                "remaining_questions": 1,
+                "target_questions": 2,
+                "report_path": str(report_two),
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    q1 = load_eval_questions(EVAL_PATH)[30]
+    q2 = load_eval_questions(EVAL_PATH)[47]
+    report_one.write_text(
+        json.dumps(
+            build_eval_report([score_eval_result(q1, _build_query_result(mode="direct", document_code="СП 63.13330.2018"))]).model_dump(mode="json"),
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    report_two.write_text(
+        json.dumps(
+            build_eval_report([score_eval_result(q2, _build_query_result(mode="clarify", document_code="СП 63.13330.2018"))]).model_dump(mode="json"),
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "status": "running",
+                "worker_count": 2,
+                "manifest_path": str(manifest_path),
+                "workers": [
+                    {"state_path": str(state_one)},
+                    {"state_path": str(state_two)},
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    status = read_stage2a_eval_state(manifest_path=manifest_path)
+
+    assert status["status"] == "running"
+    assert status["processed_questions"] == 2
+    assert status["remaining_questions"] == 1
+    assert status["report"]["total_questions"] == 2
+    assert status["report"]["document_hit_at_3"] == 1.0
+
+
+def test_eval_shard_selection_is_stable() -> None:
+    questions = [
+        EvalQuestion(
+            id=f"eval-{index:04d}",
+            query=f"q{index}",
+            scenario="s",
+            expected_mode="direct",
+        )
+        for index in range(6)
+    ]
+
+    from qanorm.stage2a import eval_runner as module
+
+    shard_zero = module._slice_questions_for_shard(questions, shard_index=0, shard_count=3)
+    shard_one = module._slice_questions_for_shard(questions, shard_index=1, shard_count=3)
+    shard_two = module._slice_questions_for_shard(questions, shard_index=2, shard_count=3)
+
+    assert [item.id for item in shard_zero] == ["eval-0000", "eval-0003"]
+    assert [item.id for item in shard_one] == ["eval-0001", "eval-0004"]
+    assert [item.id for item in shard_two] == ["eval-0002", "eval-0005"]

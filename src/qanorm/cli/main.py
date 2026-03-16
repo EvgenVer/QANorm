@@ -16,7 +16,13 @@ from qanorm.services.health import get_health_report
 from qanorm.services.ingestion import check_configuration, run_seed_crawl
 from qanorm.services.metrics import get_ingestion_metrics, get_ingestion_test_run_report
 from qanorm.services.refresh_service import request_document_refresh, run_document_refresh
-from qanorm.stage2a.eval_runner import run_stage2a_eval
+from qanorm.stage2a.eval_runner import (
+    read_stage2a_eval_state,
+    run_stage2a_eval,
+    run_stage2a_eval_worker,
+    start_parallel_stage2a_eval_processes,
+    start_stage2a_eval_process,
+)
 from qanorm.stage2a.indexing.backfill import (
     backfill_derived_retrieval_data_worker,
     backfill_retrieval_unit_embeddings,
@@ -156,6 +162,50 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional number of questions to run from the beginning of the eval set.",
     )
+    stage2a_eval_parser.add_argument(
+        "--scenario",
+        default=None,
+        help="Optional scenario filter.",
+    )
+
+    stage2a_eval_start_parser = subparsers.add_parser(
+        "stage2a-eval-start",
+        help="Start or resume detached Stage 2A eval run.",
+    )
+    stage2a_eval_start_parser.add_argument(
+        "--questions-path",
+        default=str(Path(__file__).resolve().parents[3] / "eval" / "stage2a" / "questions.jsonl"),
+        help="Path to the Stage 2A eval JSONL file.",
+    )
+    stage2a_eval_start_parser.add_argument("--limit", type=int, default=None, help="Optional number of questions to run.")
+    stage2a_eval_start_parser.add_argument("--scenario", default=None, help="Optional scenario filter.")
+    stage2a_eval_start_parser.add_argument("--parallel-workers", type=int, default=1, help="Optional number of shard workers.")
+    stage2a_eval_start_parser.add_argument("--state-path", default=None, help="Optional path to the eval state JSON.")
+    stage2a_eval_start_parser.add_argument("--report-path", default=None, help="Optional path to the eval report JSON.")
+    stage2a_eval_start_parser.add_argument("--log-path", default=None, help="Optional path to the eval log file.")
+    stage2a_eval_start_parser.add_argument("--manifest-path", default=None, help="Optional path to the parallel manifest JSON.")
+
+    stage2a_eval_status_parser = subparsers.add_parser(
+        "stage2a-eval-status",
+        help="Read the persisted state of the detached Stage 2A eval run.",
+    )
+    stage2a_eval_status_parser.add_argument("--state-path", default=None, help="Optional path to the eval state JSON.")
+    stage2a_eval_status_parser.add_argument("--report-path", default=None, help="Optional path to the eval report JSON.")
+    stage2a_eval_status_parser.add_argument("--log-path", default=None, help="Optional path to the eval log file.")
+    stage2a_eval_status_parser.add_argument("--manifest-path", default=None, help="Optional path to the parallel manifest JSON.")
+
+    stage2a_eval_worker_parser = subparsers.add_parser(
+        "stage2a-eval-worker",
+        help=argparse.SUPPRESS,
+    )
+    stage2a_eval_worker_parser.add_argument("--questions-path", required=True)
+    stage2a_eval_worker_parser.add_argument("--limit", type=int, default=None)
+    stage2a_eval_worker_parser.add_argument("--scenario", default=None)
+    stage2a_eval_worker_parser.add_argument("--state-path", required=True)
+    stage2a_eval_worker_parser.add_argument("--report-path", required=True)
+    stage2a_eval_worker_parser.add_argument("--log-path", required=True)
+    stage2a_eval_worker_parser.add_argument("--shard-index", type=int, default=0)
+    stage2a_eval_worker_parser.add_argument("--shard-count", type=int, default=1)
 
     return parser
 
@@ -345,8 +395,82 @@ def main() -> None:
         report = run_stage2a_eval(
             questions_path=args.questions_path,
             limit=args.limit,
+            scenario=args.scenario,
         )
         print(json.dumps(report.model_dump(mode="json"), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "stage2a-eval-start":
+        if args.parallel_workers > 1:
+            print(
+                json.dumps(
+                    asdict(
+                        start_parallel_stage2a_eval_processes(
+                            worker_count=args.parallel_workers,
+                            questions_path=args.questions_path,
+                            limit=args.limit,
+                            scenario=args.scenario,
+                            state_path=args.state_path,
+                            report_path=args.report_path,
+                            log_path=args.log_path,
+                            manifest_path=args.manifest_path,
+                        )
+                    ),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return
+        print(
+            json.dumps(
+                start_stage2a_eval_process(
+                    questions_path=args.questions_path,
+                    limit=args.limit,
+                    scenario=args.scenario,
+                    state_path=args.state_path,
+                    report_path=args.report_path,
+                    log_path=args.log_path,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if args.command == "stage2a-eval-status":
+        print(
+            json.dumps(
+                read_stage2a_eval_state(
+                    state_path=args.state_path,
+                    report_path=args.report_path,
+                    log_path=args.log_path,
+                    manifest_path=args.manifest_path,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if args.command == "stage2a-eval-worker":
+        print(
+            json.dumps(
+                asdict(
+                    run_stage2a_eval_worker(
+                        questions_path=args.questions_path,
+                        limit=args.limit,
+                        scenario=args.scenario,
+                        state_path=args.state_path,
+                        report_path=args.report_path,
+                        log_path=args.log_path,
+                        shard_index=args.shard_index,
+                        shard_count=args.shard_count,
+                    )
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     parser.print_help()
