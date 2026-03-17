@@ -13,6 +13,7 @@
 - `Stage 2A MVP` проходит все зафиксированные acceptance thresholds и готов к приемке; открытых implementation-задач не осталось.
 - следующий implementation-этап: `Stage 2B` с conversational memory, multi-session UI и потоковым debug trace;
 - `Stage 2B` сознательно реализуется без авторизации и без сохранения chat sessions в БД; память живет только в `st.session_state` до reload браузера.
+- implementation-задачи `Stage 2B` закрыты; подготовлены automated regression coverage, manual smoke checklist и readiness report для ручной приемки.
 
 ## Stage 1
 
@@ -280,15 +281,15 @@
 
 ### Блок O. Manual acceptance and regression coverage
 
-- [ ] Обновить ручной smoke checklist под conversational UI.
-- [ ] Добавить ручной сценарий `вопрос -> follow-up -> уточнение`.
-- [ ] Добавить ручной сценарий `partial -> дополни ответ`.
-- [ ] Добавить ручной сценарий `Новая сессия`.
-- [ ] Добавить ручной сценарий `две независимые сессии в одном UI`.
-- [ ] Добавить ручной сценарий `debug trace стримится в чат`.
-- [ ] Добавить ручной сценарий `форматирование корректно без следующего вопроса`.
-- [ ] Добавить integration tests на изоляцию session state между несколькими локальными чатами.
-- [ ] Подготовить краткий readiness report по `Stage 2B`.
+- [x] Обновить ручной smoke checklist под conversational UI.
+- [x] Добавить ручной сценарий `вопрос -> follow-up -> уточнение`.
+- [x] Добавить ручной сценарий `partial -> дополни ответ`.
+- [x] Добавить ручной сценарий `Новая сессия`.
+- [x] Добавить ручной сценарий `две независимые сессии в одном UI`.
+- [x] Добавить ручной сценарий `debug trace стримится в чат`.
+- [x] Добавить ручной сценарий `форматирование корректно без следующего вопроса`.
+- [x] Добавить integration tests на изоляцию session state между несколькими локальными чатами.
+- [x] Подготовить краткий readiness report по `Stage 2B`.
 
 ## Покрытие плана
 
