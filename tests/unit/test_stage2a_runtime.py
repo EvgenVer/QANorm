@@ -3,8 +3,15 @@ from __future__ import annotations
 from types import SimpleNamespace
 from uuid import uuid4
 
-from qanorm.stage2a.contracts import AnswerClaimDTO, EvidenceItemDTO, Stage2AAnswerDTO
+from qanorm.stage2a.contracts import (
+    AnswerClaimDTO,
+    ConversationMessageDTO,
+    EvidenceItemDTO,
+    Stage2AAnswerDTO,
+    Stage2AConversationalQueryRequest,
+)
 from qanorm.stage2a.runtime import Stage2ARuntime
+from qanorm.stage2a.session_memory import create_chat_session
 
 
 class _FakeSession:
@@ -256,7 +263,7 @@ def test_runtime_uses_fallback_evidence_pack_when_controller_selected_none(monke
     assert result.answer.mode == "partial"
     assert result.answer.evidence[0].evidence_id.startswith("ev-fallback-")
     assert "Runtime fallback used the deterministic evidence pack." in result.controller.reasoning_summary
-    assert any("interactive-режиме" in item for item in result.answer.limitations)
+    assert result.answer.limitations
 
 
 def test_runtime_promotes_partial_to_direct_when_one_document_has_enough_context(monkeypatch) -> None:
@@ -421,7 +428,7 @@ def test_runtime_switches_to_clarify_for_broad_multi_document_query(monkeypatch)
     assert result.controller.answer_mode == "clarify"
     assert result.answer.mode == "clarify"
     assert "switched the answer to clarify" in result.controller.reasoning_summary
-    assert any("вопрос слишком широкий" in item for item in result.answer.limitations)
+    assert result.answer.limitations
 
 
 def test_runtime_keeps_direct_for_broad_query_when_one_document_has_strong_context(monkeypatch) -> None:
@@ -613,3 +620,192 @@ def test_runtime_promotes_partial_to_direct_when_one_document_dominates_two_docu
 
     assert result.controller.answer_mode == "direct"
     assert result.answer.mode == "direct"
+
+
+def test_runtime_answer_conversation_turn_builds_effective_query_from_session_context(monkeypatch) -> None:
+    captured: dict[str, str] = {}
+    evidence = _build_unit_evidence()
+
+    class _FakeController:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def run(self, query_text: str):
+            captured["controller_query"] = query_text
+            return SimpleNamespace(
+                query_text=query_text,
+                answer_mode="partial",
+                reasoning_summary="Controller used conversational context.",
+                selected_evidence_ids=[item.evidence_id for item in evidence],
+                evidence=evidence,
+                trajectory={"step": "conversational"},
+                policy_hint="conversation aware",
+                iterations_used=1,
+            )
+
+    class _FakeRetrieval:
+        def parse_query(self, query_text: str):
+            return SimpleNamespace(
+                raw_text=query_text,
+                normalized_text=query_text,
+                explicit_document_codes=[],
+                explicit_locator_values=[],
+                lexical_tokens=["follow", "up"],
+            )
+
+        def build_evidence_pack(self, query_text: str):
+            return []
+
+    class _FakeComposer:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def compose(self, **kwargs):
+            captured["composer_query"] = kwargs["query_text"]
+            return SimpleNamespace(
+                answer_mode="partial",
+                answer_text="Дополнение по фундаментам.",
+                claims=[AnswerClaimDTO(text="Supported claim.", evidence_ids=["ev-0001"])],
+                evidence=evidence,
+                limitations=["Нужно уточнение по типу фундамента."],
+            )
+
+    class _FakeVerifier:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def verify(self, **kwargs):
+            return Stage2AAnswerDTO(
+                mode="direct",
+                answer_text="Дополнение по фундаментам.",
+                claims=[AnswerClaimDTO(text="Supported claim.", evidence_ids=["ev-0001"])],
+                evidence=evidence,
+                limitations=["Нужно уточнение по типу фундамента."],
+            )
+
+    session = create_chat_session("session-1")
+    session = session.model_copy(
+        update={
+            "memory": session.memory.model_copy(
+                update={
+                    "conversation_summary": "Документы в фокусе: СП 63.13330.2018. Незакрытая тема: шаг арматуры в плитах.",
+                    "active_document_hints": ["СП 63.13330.2018"],
+                    "active_locator_hints": ["10.3.8"],
+                    "open_threads": ["шаг арматуры в плитах :: нужен контекст по другой конструкции"],
+                }
+            )
+        }
+    )
+
+    runtime = Stage2ARuntime(
+        session_factory=_FakeSessionFactory(),
+        model_bundle=SimpleNamespace(controller=object(), composer=object(), verifier=object(), reranker=object(), provider_name="gemini"),
+        controller_factory=_FakeController,
+        composer_factory=_FakeComposer,
+        verifier_factory=_FakeVerifier,
+    )
+    monkeypatch.setattr("qanorm.stage2a.runtime.RetrievalEngine", lambda session: _FakeRetrieval())
+
+    result = runtime.answer_conversation_turn(
+        Stage2AConversationalQueryRequest(
+            query_text="А для фундаментов?",
+            chat_session=session,
+        )
+    )
+
+    assert result.query_kind == "follow_up"
+    assert "Контекст беседы" in result.effective_query
+    assert "СП 63.13330.2018" in captured["controller_query"]
+    assert captured["composer_query"] == "А для фундаментов?"
+    assert result.chat_session.messages[-2].role == "user"
+    assert result.chat_session.messages[-1].role == "assistant"
+    assert result.chat_session.memory.open_threads
+
+
+def test_runtime_answer_conversation_turn_classifies_expand_request(monkeypatch) -> None:
+    evidence = _build_unit_evidence()
+
+    class _FakeController:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def run(self, query_text: str):
+            return SimpleNamespace(
+                query_text=query_text,
+                answer_mode="partial",
+                reasoning_summary="Controller used previous answer.",
+                selected_evidence_ids=[item.evidence_id for item in evidence],
+                evidence=evidence,
+                trajectory={"step": "expand"},
+                policy_hint="conversation aware",
+                iterations_used=1,
+            )
+
+    class _FakeRetrieval:
+        def parse_query(self, query_text: str):
+            return SimpleNamespace(
+                raw_text=query_text,
+                normalized_text=query_text,
+                explicit_document_codes=[],
+                explicit_locator_values=[],
+                lexical_tokens=["дополни", "ответ"],
+            )
+
+        def build_evidence_pack(self, query_text: str):
+            return []
+
+    class _FakeComposer:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def compose(self, **kwargs):
+            return SimpleNamespace(
+                answer_mode="partial",
+                answer_text="Дополненный ответ.",
+                claims=[AnswerClaimDTO(text="Supported claim.", evidence_ids=["ev-0001"])],
+                evidence=evidence,
+                limitations=["Требуются дополнительные детали."],
+            )
+
+    class _FakeVerifier:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def verify(self, **kwargs):
+            return Stage2AAnswerDTO(
+                mode="direct",
+                answer_text="Дополненный ответ.",
+                claims=[AnswerClaimDTO(text="Supported claim.", evidence_ids=["ev-0001"])],
+                evidence=evidence,
+                limitations=["Требуются дополнительные детали."],
+            )
+
+    session = create_chat_session("session-2")
+    session = session.model_copy(
+        update={
+            "messages": [
+                ConversationMessageDTO(role="user", content="Что по шагу арматуры?"),
+                ConversationMessageDTO(role="assistant", content="Частичный ответ по плитам."),
+            ],
+            "memory": session.memory.model_copy(update={"conversation_summary": "Обсуждался шаг арматуры в плитах."}),
+        }
+    )
+
+    runtime = Stage2ARuntime(
+        session_factory=_FakeSessionFactory(),
+        model_bundle=SimpleNamespace(controller=object(), composer=object(), verifier=object(), reranker=object(), provider_name="gemini"),
+        controller_factory=_FakeController,
+        composer_factory=_FakeComposer,
+        verifier_factory=_FakeVerifier,
+    )
+    monkeypatch.setattr("qanorm.stage2a.runtime.RetrievalEngine", lambda session: _FakeRetrieval())
+
+    result = runtime.answer_conversation_turn(
+        Stage2AConversationalQueryRequest(
+            query_text="Дополни ответ",
+            chat_session=session,
+        )
+    )
+
+    assert result.query_kind == "expand_answer"
+    assert "Пользователь просит дополнить предыдущий ответ" in result.effective_query

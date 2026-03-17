@@ -70,6 +70,13 @@ class Stage2AChatSessionDTO(BaseModel):
     runtime_events: list[RuntimeEventDTO] = Field(default_factory=list)
 
 
+class Stage2AConversationalQueryRequest(BaseModel):
+    """One conversational Stage 2B request bound to an existing local chat session."""
+
+    query_text: str = Field(min_length=1)
+    chat_session: Stage2AChatSessionDTO
+
+
 class DocumentCandidateDTO(BaseModel):
     """Serializable document candidate produced by the retrieval layer."""
 

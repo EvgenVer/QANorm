@@ -1,9 +1,9 @@
-"""High-level orchestration for one Stage 2A query."""
+"""High-level orchestration for one Stage 2A / Stage 2B query."""
 
 from __future__ import annotations
 
 import re
-from typing import Callable
+from typing import Callable, Literal
 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, sessionmaker
@@ -11,15 +11,33 @@ from sqlalchemy.orm import Session, sessionmaker
 from qanorm.db.session import create_session_factory
 from qanorm.stage2a.agents import Composer, ControllerAgent, ControllerAgentResult, GroundingVerifier
 from qanorm.stage2a.config import Stage2AConfig, get_stage2a_config
-from qanorm.stage2a.contracts import AnswerClaimDTO
-from qanorm.stage2a.contracts import EvidenceItemDTO, Stage2AAnswerDTO
+from qanorm.stage2a.contracts import (
+    AnswerClaimDTO,
+    EvidenceItemDTO,
+    Stage2AAnswerDTO,
+    Stage2AChatSessionDTO,
+    Stage2AConversationalQueryRequest,
+)
 from qanorm.stage2a.providers import Stage2ADspyModelBundle, build_stage2a_dspy_models
 from qanorm.stage2a.retrieval.engine import RetrievalEngine, RetrievalHit
 from qanorm.stage2a.retrieval.query_parser import ParsedQuery
+from qanorm.stage2a.session_memory import append_message, update_memory_after_answer
 
 
 _AMBIGUOUS_QUERY_RE = re.compile(
-    r"(что\s+требуется\s+по|какие\s+нормы|что\s+нужно\s+учитывать|какие\s+требования\s+к)",
+    r"(С‡С‚Рѕ\s+С‚СЂРµР±СѓРµС‚СЃСЏ\s+РїРѕ|РєР°РєРёРµ\s+РЅРѕСЂРјС‹|С‡С‚Рѕ\s+РЅСѓР¶РЅРѕ\s+СѓС‡РёС‚С‹РІР°С‚СЊ|РєР°РєРёРµ\s+С‚СЂРµР±РѕРІР°РЅРёСЏ\s+Рє)",
+    re.IGNORECASE,
+)
+_EXPAND_REQUEST_RE = re.compile(
+    r"\b(РґРѕРїРѕР»РЅРё|РїСЂРѕРґРѕР»Р¶Рё|С‡С‚Рѕ\s+РµС‰Рµ|РµС‰Рµ|РїРѕРґСЂРѕР±РЅРµРµ|СЂР°СЃРєСЂРѕР№)\b",
+    re.IGNORECASE,
+)
+_CLARIFY_REQUEST_RE = re.compile(
+    r"\b(СѓС‚РѕС‡РЅРё|РєР°РєРѕР№\s+РёРјРµРЅРЅРѕ|РєР°РєРѕР№\s+РїСѓРЅРєС‚|РіРґРµ\s+СЌС‚Рѕ\s+РЅР°РїРёСЃР°РЅРѕ|РїСЂРёРІРµРґРё\s+СЃСЃС‹Р»РєСѓ|РєР°РєР°СЏ\s+СЃСЃС‹Р»РєР°)\b",
+    re.IGNORECASE,
+)
+_FOLLOW_UP_RE = re.compile(
+    r"\b(Р°\s+С‡С‚Рѕ|Р°\s+РєР°Рє|Р°\s+РґР»СЏ|РїРѕ\s+РЅРµРјСѓ|РїРѕ\s+РЅРµР№|РїРѕ\s+РЅРёРј|РїРѕ\s+СЌС‚РѕРјСѓ|РїРѕ\s+СЌС‚РѕР№|РїРѕ\s+СЌС‚РёРј|РґР»СЏ\s+РЅРёС…|РґР»СЏ\s+РЅРµРіРѕ|РґР»СЏ\s+РЅРµРµ)\b",
     re.IGNORECASE,
 )
 
@@ -29,6 +47,15 @@ class Stage2AQueryResult(BaseModel):
 
     controller: ControllerAgentResult
     answer: Stage2AAnswerDTO
+
+
+class Stage2AConversationalQueryResult(BaseModel):
+    """One Stage 2B conversational answer paired with the updated local session."""
+
+    query_kind: Literal["new_question", "follow_up", "clarify", "expand_answer"]
+    effective_query: str = Field(min_length=1)
+    result: Stage2AQueryResult
+    chat_session: Stage2AChatSessionDTO
 
 
 class Stage2ARuntime:
@@ -52,19 +79,73 @@ class Stage2ARuntime:
         self._verifier_factory = verifier_factory or GroundingVerifier
 
     def answer_query(self, query_text: str) -> Stage2AQueryResult:
-        """Run the full Stage 2A answer flow for one question."""
+        """Run the full Stage 2A answer flow for one independent question."""
+
+        return self._run_query_flow(retrieval_query_text=query_text, answer_query_text=query_text)
+
+    def answer_conversation_turn(
+        self,
+        request: Stage2AConversationalQueryRequest,
+    ) -> Stage2AConversationalQueryResult:
+        """Run one conversational Stage 2B turn and update the in-memory chat session."""
+
+        query_kind = _classify_conversation_turn(query_text=request.query_text, chat_session=request.chat_session)
+        effective_query = _build_effective_query(
+            query_text=request.query_text,
+            query_kind=query_kind,
+            chat_session=request.chat_session,
+            config=self.config,
+        )
+        result = self._run_query_flow(
+            retrieval_query_text=effective_query,
+            answer_query_text=request.query_text,
+        )
+        updated_session = append_message(
+            request.chat_session,
+            role="user",
+            content=request.query_text,
+            config=self.config,
+        )
+        updated_session = append_message(
+            updated_session,
+            role="assistant",
+            content=result.answer.answer_text,
+            answer_mode=result.answer.mode,
+            result_payload=result.model_dump(mode="json"),
+            config=self.config,
+        )
+        updated_session = update_memory_after_answer(
+            updated_session,
+            query_text=request.query_text,
+            answer=result.answer,
+            config=self.config,
+        )
+        return Stage2AConversationalQueryResult(
+            query_kind=query_kind,
+            effective_query=effective_query,
+            result=result,
+            chat_session=updated_session,
+        )
+
+    def _run_query_flow(
+        self,
+        *,
+        retrieval_query_text: str,
+        answer_query_text: str,
+    ) -> Stage2AQueryResult:
+        """Run the existing Stage 2A pipeline with separate retrieval and answer-facing query texts."""
 
         session = self.session_factory()
         try:
             retrieval = RetrievalEngine(session)
-            parsed = retrieval.parse_query(query_text)
+            parsed = retrieval.parse_query(retrieval_query_text)
             controller = self._controller_factory(
                 retrieval_engine=retrieval,
                 config=self.config,
                 model_bundle=self.model_bundle,
             )
-            controller_result = _coerce_controller_result(controller.run(query_text))
-            runtime_evidence = _load_runtime_evidence_pack(retrieval, query_text)
+            controller_result = _coerce_controller_result(controller.run(retrieval_query_text))
+            runtime_evidence = _load_runtime_evidence_pack(retrieval, retrieval_query_text)
             controller_result = _enrich_controller_result(
                 controller_result=controller_result,
                 runtime_evidence=runtime_evidence,
@@ -83,7 +164,7 @@ class Stage2ARuntime:
                     answer_text=controller_result.reasoning_summary,
                     claims=[],
                     evidence=[],
-                    limitations=["Контроллер не собрал подтвержденные evidence."],
+                    limitations=["РљРѕРЅС‚СЂРѕР»Р»РµСЂ РЅРµ СЃРѕР±СЂР°Р» РїРѕРґС‚РІРµСЂР¶РґРµРЅРЅС‹Рµ evidence."],
                     debug_trace=_build_debug_trace(controller_result, enabled=self.config.runtime.enable_debug_trace),
                 )
                 return Stage2AQueryResult(controller=controller_result, answer=answer)
@@ -93,7 +174,7 @@ class Stage2ARuntime:
                 model_bundle=self.model_bundle,
             )
             draft = composer.compose(
-                query_text=query_text,
+                query_text=answer_query_text,
                 answer_mode=controller_result.answer_mode,
                 evidence=controller_result.evidence,
             )
@@ -102,7 +183,7 @@ class Stage2ARuntime:
                     config=self.config,
                     model_bundle=self.model_bundle,
                 )
-                answer = verifier.verify(query_text=query_text, draft=draft)
+                answer = verifier.verify(query_text=answer_query_text, draft=draft)
             else:
                 answer = _build_interactive_answer_from_draft(
                     draft,
@@ -114,6 +195,78 @@ class Stage2ARuntime:
             return Stage2AQueryResult(controller=controller_result, answer=answer)
         finally:
             session.close()
+
+
+def _classify_conversation_turn(
+    *,
+    query_text: str,
+    chat_session: Stage2AChatSessionDTO,
+) -> Literal["new_question", "follow_up", "clarify", "expand_answer"]:
+    normalized = query_text.strip()
+    if not normalized:
+        return "new_question"
+
+    has_context = bool(chat_session.messages or chat_session.memory.conversation_summary or chat_session.memory.active_document_hints)
+    if not has_context:
+        return "new_question"
+
+    lowered = normalized.casefold()
+
+    if _EXPAND_REQUEST_RE.search(normalized) or _contains_any(lowered, ("дополни", "продолжи", "что еще", "ещё", "еще", "подробнее", "раскрой")):
+        return "expand_answer"
+    if _CLARIFY_REQUEST_RE.search(normalized) or _contains_any(
+        lowered,
+        ("уточни", "какой именно", "какой пункт", "где это написано", "приведи ссылку", "какая ссылка"),
+    ):
+        return "clarify"
+    if _FOLLOW_UP_RE.search(normalized) or _contains_any(
+        lowered,
+        ("а что", "а как", "а для", "по нему", "по ней", "по ним", "по этому", "по этой", "по этим"),
+    ):
+        return "follow_up"
+
+    if len(normalized.split()) <= 5:
+        return "follow_up"
+    return "new_question"
+
+
+def _build_effective_query(
+    *,
+    query_text: str,
+    query_kind: Literal["new_question", "follow_up", "clarify", "expand_answer"],
+    chat_session: Stage2AChatSessionDTO,
+    config: Stage2AConfig,
+) -> str:
+    if query_kind == "new_question":
+        return query_text
+
+    parts: list[str] = []
+    memory = chat_session.memory
+    if memory.conversation_summary:
+        parts.append(f"Контекст беседы: {memory.conversation_summary}")
+    if memory.active_document_hints:
+        parts.append(f"Документы в фокусе: {', '.join(memory.active_document_hints)}.")
+    if memory.active_locator_hints and query_kind in {"clarify", "expand_answer", "follow_up"}:
+        parts.append(f"Локаторы в фокусе: {', '.join(memory.active_locator_hints)}.")
+    if memory.open_threads:
+        parts.append(f"Незакрытые темы: {'; '.join(memory.open_threads)}.")
+
+    recent_messages = chat_session.messages[-2:]
+    if recent_messages:
+        parts.append(
+            "Последние сообщения: "
+            + " | ".join(f"{item.role}: {_normalize_inline_text(item.content)}" for item in recent_messages)
+        )
+
+    prefix = {
+        "new_question": "Вопрос пользователя",
+        "follow_up": "Follow-up вопрос пользователя",
+        "clarify": "Уточняющий вопрос пользователя",
+        "expand_answer": "Пользователь просит дополнить предыдущий ответ",
+    }[query_kind]
+    parts.append(f"{prefix}: {query_text}")
+    effective_query = "\n".join(part for part in parts if part).strip()
+    return effective_query[: config.conversation.max_summary_chars * 2]
 
 
 def _build_debug_trace(result: ControllerAgentResult, *, enabled: bool) -> list[str]:
@@ -378,28 +531,39 @@ def _derive_interactive_limitations(
 
     if answer_mode == "clarify":
         limitations.append(
-            "Ответ ограничен: вопрос слишком широкий для уверенного нормативного вывода без уточнения объекта, типа конструкции или нужного документа."
+            "РћС‚РІРµС‚ РѕРіСЂР°РЅРёС‡РµРЅ: РІРѕРїСЂРѕСЃ СЃР»РёС€РєРѕРј С€РёСЂРѕРєРёР№ РґР»СЏ СѓРІРµСЂРµРЅРЅРѕРіРѕ РЅРѕСЂРјР°С‚РёРІРЅРѕРіРѕ РІС‹РІРѕРґР° Р±РµР· СѓС‚РѕС‡РЅРµРЅРёСЏ РѕР±СЉРµРєС‚Р°, С‚РёРїР° РєРѕРЅСЃС‚СЂСѓРєС†РёРё РёР»Рё РЅСѓР¶РЅРѕРіРѕ РґРѕРєСѓРјРµРЅС‚Р°."
         )
         if len(unique_documents) >= 2:
             limitations.append(
-                "Найдено несколько конкурирующих нормативных веток, поэтому система просит уточнение вместо уверенного прямого ответа."
+                "РќР°Р№РґРµРЅРѕ РЅРµСЃРєРѕР»СЊРєРѕ РєРѕРЅРєСѓСЂРёСЂСѓСЋС‰РёС… РЅРѕСЂРјР°С‚РёРІРЅС‹С… РІРµС‚РѕРє, РїРѕСЌС‚РѕРјСѓ СЃРёСЃС‚РµРјР° РїСЂРѕСЃРёС‚ СѓС‚РѕС‡РЅРµРЅРёРµ РІРјРµСЃС‚Рѕ СѓРІРµСЂРµРЅРЅРѕРіРѕ РїСЂСЏРјРѕРіРѕ РѕС‚РІРµС‚Р°."
             )
         return limitations
 
     if answer_mode == "partial":
         if retrieval_unit_count == 0 and node_only_count > 0:
             limitations.append(
-                "Ответ частичный: найдены в основном точечные node-level фрагменты без достаточного семантического блока вокруг них."
+                "РћС‚РІРµС‚ С‡Р°СЃС‚РёС‡РЅС‹Р№: РЅР°Р№РґРµРЅС‹ РІ РѕСЃРЅРѕРІРЅРѕРј С‚РѕС‡РµС‡РЅС‹Рµ node-level С„СЂР°РіРјРµРЅС‚С‹ Р±РµР· РґРѕСЃС‚Р°С‚РѕС‡РЅРѕРіРѕ СЃРµРјР°РЅС‚РёС‡РµСЃРєРѕРіРѕ Р±Р»РѕРєР° РІРѕРєСЂСѓРі РЅРёС…."
             )
         elif retrieval_unit_count < 2:
             limitations.append(
-                "Ответ частичный: найденных контекстных retrieval-unit фрагментов пока недостаточно для полностью уверенного прямого вывода."
+                "РћС‚РІРµС‚ С‡Р°СЃС‚РёС‡РЅС‹Р№: РЅР°Р№РґРµРЅРЅС‹С… РєРѕРЅС‚РµРєСЃС‚РЅС‹С… retrieval-unit С„СЂР°РіРјРµРЅС‚РѕРІ РїРѕРєР° РЅРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РґР»СЏ РїРѕР»РЅРѕСЃС‚СЊСЋ СѓРІРµСЂРµРЅРЅРѕРіРѕ РїСЂСЏРјРѕРіРѕ РІС‹РІРѕРґР°."
             )
         if parsed_query.explicit_locator_values and not has_locator:
             limitations.append(
-                "Ответ частичный: релевантный документ найден, но ожидаемый locator не подтвержден в итоговом evidence-пакете."
+                "РћС‚РІРµС‚ С‡Р°СЃС‚РёС‡РЅС‹Р№: СЂРµР»РµРІР°РЅС‚РЅС‹Р№ РґРѕРєСѓРјРµРЅС‚ РЅР°Р№РґРµРЅ, РЅРѕ РѕР¶РёРґР°РµРјС‹Р№ locator РЅРµ РїРѕРґС‚РІРµСЂР¶РґРµРЅ РІ РёС‚РѕРіРѕРІРѕРј evidence-РїР°РєРµС‚Рµ."
             )
         limitations.append(
-            "Дополнительная LLM-верификация в interactive-режиме пропущена, чтобы не урезать уже найденный контекст."
+            "Р”РѕРїРѕР»РЅРёС‚РµР»СЊРЅР°СЏ LLM-РІРµСЂРёС„РёРєР°С†РёСЏ РІ interactive-СЂРµР¶РёРјРµ РїСЂРѕРїСѓС‰РµРЅР°, С‡С‚РѕР±С‹ РЅРµ СѓСЂРµР·Р°С‚СЊ СѓР¶Рµ РЅР°Р№РґРµРЅРЅС‹Р№ РєРѕРЅС‚РµРєСЃС‚."
         )
     return limitations
+
+
+def _normalize_inline_text(text: str, limit: int = 180) -> str:
+    normalized = " ".join(text.split())
+    if len(normalized) <= limit:
+        return normalized
+    return f"{normalized[: limit - 3].rstrip()}..."
+
+
+def _contains_any(text: str, needles: tuple[str, ...]) -> bool:
+    return any(needle in text for needle in needles)
