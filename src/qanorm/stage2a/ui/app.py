@@ -1,4 +1,4 @@
-"""Streamlit MVP for the Stage 2A grounded QA flow."""
+"""Streamlit UI for the Stage 2A / Stage 2B grounded QA flow."""
 
 from __future__ import annotations
 
@@ -7,52 +7,62 @@ from typing import Iterable
 import streamlit as st
 
 from qanorm.stage2a.config import get_stage2a_config
+from qanorm.stage2a.contracts import Stage2AConversationalQueryRequest
 from qanorm.stage2a.runtime import Stage2AQueryResult, Stage2ARuntime
+from qanorm.stage2a.ui.session_state import (
+    create_new_ui_session,
+    ensure_ui_sessions,
+    get_active_ui_session,
+    list_ui_sessions,
+    replace_active_ui_session,
+    reset_active_ui_session,
+    set_active_ui_session,
+)
 
 
 def main() -> None:
-    """Render the Stage 2A MVP chat UI."""
+    """Render the Stage 2A / Stage 2B chat UI."""
 
     config = get_stage2a_config()
     st.set_page_config(page_title=config.ui.title, layout="wide")
     st.title(config.ui.title)
-    st.caption("Agentic RAG MVP over the local Stage 1 normative corpus.")
+    st.caption("Agentic RAG over the local Stage 1 normative corpus.")
 
     runtime = _get_runtime()
-    _ensure_state()
+    ensure_ui_sessions(st.session_state, config=config)
+    _render_session_sidebar()
+    active_session = get_active_ui_session(st.session_state)
 
-    for entry in st.session_state.messages:
-        with st.chat_message(entry["role"]):
-            st.markdown(entry["content"])
-            if entry["role"] == "assistant" and entry.get("result"):
-                _render_result_panels(entry["result"])
+    for entry in active_session.messages:
+        with st.chat_message(entry.role):
+            st.markdown(entry.content)
+            if entry.role == "assistant" and entry.result_payload:
+                _render_result_panels(entry.result_payload)
 
     query_text = st.chat_input("Задайте инженерный нормативный вопрос")
     if not query_text:
         return
 
-    st.session_state.messages.append({"role": "user", "content": query_text})
     with st.chat_message("user"):
         st.markdown(query_text)
 
     with st.chat_message("assistant"):
-        with st.status("Выполняется Stage 2A pipeline", expanded=config.ui.show_debug_panel):
-            result = runtime.answer_query(query_text)
+        with st.status("Выполняется Stage 2A/2B pipeline", expanded=config.ui.show_debug_panel):
+            conversational_result = runtime.answer_conversation_turn(
+                Stage2AConversationalQueryRequest(
+                    query_text=query_text,
+                    chat_session=active_session,
+                )
+            )
         response_placeholder = st.empty()
-        answer_text = result.answer.answer_text
+        answer_text = conversational_result.result.answer.answer_text
         if config.ui.stream:
             response_placeholder.write_stream(_stream_answer(answer_text))
         else:
             response_placeholder.markdown(answer_text)
-        _render_result_panels(result)
+        _render_result_panels(conversational_result.result)
 
-    st.session_state.messages.append(
-        {
-            "role": "assistant",
-            "content": answer_text,
-            "result": result.model_dump(mode="json"),
-        }
-    )
+    replace_active_ui_session(st.session_state, conversational_result.chat_session)
 
 
 @st.cache_resource(show_spinner=False)
@@ -62,9 +72,38 @@ def _get_runtime() -> Stage2ARuntime:
     return Stage2ARuntime()
 
 
-def _ensure_state() -> None:
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+def _render_session_sidebar() -> None:
+    """Render sidebar controls for multiple local chat sessions."""
+
+    config = get_stage2a_config()
+    sessions = list_ui_sessions(st.session_state)
+    active_session = get_active_ui_session(st.session_state)
+
+    with st.sidebar:
+        st.subheader("Сессии")
+        if st.button("Новая сессия", use_container_width=True):
+            create_new_ui_session(st.session_state, config=config)
+            st.rerun()
+        if st.button("Сбросить текущую сессию", use_container_width=True):
+            reset_active_ui_session(st.session_state, config=config)
+            st.rerun()
+
+        options = [session.session_id for session in sessions]
+        selected_session_id = st.radio(
+            "Активная сессия",
+            options=options,
+            index=options.index(active_session.session_id),
+            format_func=lambda session_id: _session_title(session_id),
+        )
+        if selected_session_id != active_session.session_id:
+            set_active_ui_session(st.session_state, selected_session_id)
+            st.rerun()
+
+
+def _session_title(session_id: str) -> str:
+    sessions = {session.session_id: session for session in list_ui_sessions(st.session_state)}
+    session = sessions[session_id]
+    return session.title
 
 
 def _stream_answer(text: str) -> Iterable[str]:
