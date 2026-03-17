@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from typing import Callable, Literal
+from collections.abc import Iterator
+from typing import Literal
 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, sessionmaker
@@ -14,6 +15,7 @@ from qanorm.stage2a.config import Stage2AConfig, get_stage2a_config
 from qanorm.stage2a.contracts import (
     AnswerClaimDTO,
     EvidenceItemDTO,
+    RuntimeEventDTO,
     Stage2AAnswerDTO,
     Stage2AChatSessionDTO,
     Stage2AConversationalQueryRequest,
@@ -67,9 +69,9 @@ class Stage2ARuntime:
         config: Stage2AConfig | None = None,
         session_factory: sessionmaker[Session] | None = None,
         model_bundle: Stage2ADspyModelBundle | None = None,
-        controller_factory: Callable[..., ControllerAgent] | None = None,
-        composer_factory: Callable[..., Composer] | None = None,
-        verifier_factory: Callable[..., GroundingVerifier] | None = None,
+        controller_factory=None,
+        composer_factory=None,
+        verifier_factory=None,
     ) -> None:
         self.config = config or get_stage2a_config()
         self.session_factory = session_factory or create_session_factory()
@@ -81,13 +83,42 @@ class Stage2ARuntime:
     def answer_query(self, query_text: str) -> Stage2AQueryResult:
         """Run the full Stage 2A answer flow for one independent question."""
 
-        return self._run_query_flow(retrieval_query_text=query_text, answer_query_text=query_text)
+        final_result: Stage2AQueryResult | None = None
+        for event in self.stream_answer_query(query_text):
+            if event.event_type == "answer_ready":
+                final_result = Stage2AQueryResult.model_validate(event.payload["result"])
+        if final_result is None:
+            raise RuntimeError("Runtime finished without answer_ready event")
+        return final_result
+
+    def stream_answer_query(self, query_text: str) -> Iterator[RuntimeEventDTO]:
+        """Stream high-level runtime events for one independent Stage 2A query."""
+
+        yield from self._execute_query_flow(
+            retrieval_query_text=query_text,
+            answer_query_text=query_text,
+            query_kind="new_question",
+        )
 
     def answer_conversation_turn(
         self,
         request: Stage2AConversationalQueryRequest,
     ) -> Stage2AConversationalQueryResult:
         """Run one conversational Stage 2B turn and update the in-memory chat session."""
+
+        final_result: Stage2AConversationalQueryResult | None = None
+        for event in self.stream_conversation_turn(request):
+            if event.event_type == "answer_ready":
+                final_result = Stage2AConversationalQueryResult.model_validate(event.payload["conversation_result"])
+        if final_result is None:
+            raise RuntimeError("Conversational runtime finished without answer_ready event")
+        return final_result
+
+    def stream_conversation_turn(
+        self,
+        request: Stage2AConversationalQueryRequest,
+    ) -> Iterator[RuntimeEventDTO]:
+        """Stream high-level runtime events for one Stage 2B conversational turn."""
 
         query_kind = _classify_conversation_turn(query_text=request.query_text, chat_session=request.chat_session)
         effective_query = _build_effective_query(
@@ -96,55 +127,93 @@ class Stage2ARuntime:
             chat_session=request.chat_session,
             config=self.config,
         )
-        result = self._run_query_flow(
+
+        for event in self._execute_query_flow(
             retrieval_query_text=effective_query,
             answer_query_text=request.query_text,
-        )
-        updated_session = append_message(
-            request.chat_session,
-            role="user",
-            content=request.query_text,
-            config=self.config,
-        )
-        updated_session = append_message(
-            updated_session,
-            role="assistant",
-            content=result.answer.answer_text,
-            answer_mode=result.answer.mode,
-            result_payload=result.model_dump(mode="json"),
-            config=self.config,
-        )
-        updated_session = update_memory_after_answer(
-            updated_session,
-            query_text=request.query_text,
-            answer=result.answer,
-            config=self.config,
-        )
-        return Stage2AConversationalQueryResult(
             query_kind=query_kind,
-            effective_query=effective_query,
-            result=result,
-            chat_session=updated_session,
-        )
+        ):
+            if event.event_type != "answer_ready":
+                yield event
+                continue
 
-    def _run_query_flow(
+            result = Stage2AQueryResult.model_validate(event.payload["result"])
+            updated_session = append_message(
+                request.chat_session,
+                role="user",
+                content=request.query_text,
+                config=self.config,
+            )
+            updated_session = append_message(
+                updated_session,
+                role="assistant",
+                content=result.answer.answer_text,
+                answer_mode=result.answer.mode,
+                result_payload=result.model_dump(mode="json"),
+                config=self.config,
+            )
+            updated_session = update_memory_after_answer(
+                updated_session,
+                query_text=request.query_text,
+                answer=result.answer,
+                config=self.config,
+            )
+            conversation_result = Stage2AConversationalQueryResult(
+                query_kind=query_kind,
+                effective_query=effective_query,
+                result=result,
+                chat_session=updated_session,
+            )
+            yield event.model_copy(
+                update={
+                    "payload": {
+                        **event.payload,
+                        "conversation_result": conversation_result.model_dump(mode="json"),
+                    }
+                }
+            )
+
+    def _execute_query_flow(
         self,
         *,
         retrieval_query_text: str,
         answer_query_text: str,
-    ) -> Stage2AQueryResult:
-        """Run the existing Stage 2A pipeline with separate retrieval and answer-facing query texts."""
+        query_kind: Literal["new_question", "follow_up", "clarify", "expand_answer"],
+    ) -> Iterator[RuntimeEventDTO]:
+        """Execute the Stage 2A pipeline and emit stage/runtime events."""
+
+        yield _build_event(
+            "query_received",
+            f"Получен запрос ({query_kind}).",
+            payload={"query_text": answer_query_text},
+        )
+        if retrieval_query_text != answer_query_text:
+            yield _build_event(
+                "query_rewritten",
+                "Построен effective query с учетом session memory.",
+                payload={"effective_query": retrieval_query_text},
+            )
 
         session = self.session_factory()
         try:
             retrieval = RetrievalEngine(session)
             parsed = retrieval.parse_query(retrieval_query_text)
+
+            yield _build_event(
+                "controller_started",
+                "Запущен controller runtime.",
+                payload={"policy_hint": _build_policy_hint(parsed)},
+            )
+
             controller = self._controller_factory(
                 retrieval_engine=retrieval,
                 config=self.config,
                 model_bundle=self.model_bundle,
             )
             controller_result = _coerce_controller_result(controller.run(retrieval_query_text))
+            for event in _build_controller_trajectory_events(controller_result):
+                yield event
+
             runtime_evidence = _load_runtime_evidence_pack(retrieval, retrieval_query_text)
             controller_result = _enrich_controller_result(
                 controller_result=controller_result,
@@ -158,6 +227,16 @@ class Stage2ARuntime:
                 config=self.config,
             )
 
+            yield _build_event(
+                "evidence_updated",
+                "Обновлен итоговый evidence pack.",
+                payload={
+                    "answer_mode": controller_result.answer_mode,
+                    "evidence_count": len(controller_result.evidence),
+                    "selected_evidence_ids": controller_result.selected_evidence_ids,
+                },
+            )
+
             if not controller_result.evidence:
                 answer = Stage2AAnswerDTO(
                     mode=controller_result.answer_mode,
@@ -167,8 +246,26 @@ class Stage2ARuntime:
                     limitations=["РљРѕРЅС‚СЂРѕР»Р»РµСЂ РЅРµ СЃРѕР±СЂР°Р» РїРѕРґС‚РІРµСЂР¶РґРµРЅРЅС‹Рµ evidence."],
                     debug_trace=_build_debug_trace(controller_result, enabled=self.config.runtime.enable_debug_trace),
                 )
-                return Stage2AQueryResult(controller=controller_result, answer=answer)
+                result = Stage2AQueryResult(controller=controller_result, answer=answer)
+                yield _build_event(
+                    "warning",
+                    "Ответ ограничен: подтвержденные evidence не собраны.",
+                    level="warning",
+                    payload={"answer_mode": answer.mode, "limitations": answer.limitations},
+                )
+                yield _build_event(
+                    "answer_ready",
+                    "Финальный ответ готов.",
+                    is_terminal=True,
+                    payload={"result": result.model_dump(mode="json")},
+                )
+                return
 
+            yield _build_event(
+                "composer_started",
+                "Запущен composer по собранному evidence pack.",
+                payload={"answer_mode": controller_result.answer_mode},
+            )
             composer = self._composer_factory(
                 config=self.config,
                 model_bundle=self.model_bundle,
@@ -178,21 +275,48 @@ class Stage2ARuntime:
                 answer_mode=controller_result.answer_mode,
                 evidence=controller_result.evidence,
             )
+
             if controller_result.answer_mode == "direct":
+                yield _build_event(
+                    "verifier_started",
+                    "Запущен grounding verifier.",
+                    payload={"draft_mode": draft.answer_mode},
+                )
                 verifier = self._verifier_factory(
                     config=self.config,
                     model_bundle=self.model_bundle,
                 )
                 answer = verifier.verify(query_text=answer_query_text, draft=draft)
             else:
+                yield _build_event(
+                    "warning",
+                    "Verifier пропущен, потому что interactive answer mode не direct.",
+                    level="warning",
+                    payload={"draft_mode": draft.answer_mode},
+                )
                 answer = _build_interactive_answer_from_draft(
                     draft,
                     parsed_query=parsed,
                 )
+
             answer = answer.model_copy(
                 update={"debug_trace": _build_debug_trace(controller_result, enabled=self.config.runtime.enable_debug_trace)}
             )
-            return Stage2AQueryResult(controller=controller_result, answer=answer)
+            if answer.limitations:
+                yield _build_event(
+                    "warning",
+                    "Зафиксированы ограничения ответа.",
+                    level="warning",
+                    payload={"limitations": answer.limitations},
+                )
+
+            result = Stage2AQueryResult(controller=controller_result, answer=answer)
+            yield _build_event(
+                "answer_ready",
+                "Финальный ответ готов.",
+                is_terminal=True,
+                payload={"result": result.model_dump(mode="json")},
+            )
         finally:
             session.close()
 
@@ -267,6 +391,28 @@ def _build_effective_query(
     parts.append(f"{prefix}: {query_text}")
     effective_query = "\n".join(part for part in parts if part).strip()
     return effective_query[: config.conversation.max_summary_chars * 2]
+
+
+def _build_policy_hint(parsed: ParsedQuery) -> str:
+    if parsed.explicit_document_codes and parsed.explicit_locator_values:
+        return (
+            "The query contains an explicit document code and locator. Resolve the document first, then use "
+            "lookup_locator, and only then use search_lexical if more evidence is needed."
+        )
+    if parsed.explicit_document_codes:
+        return (
+            "The query contains an explicit document code. Resolve the document first and keep lexical retrieval "
+            "scoped to the returned document_version_id values."
+        )
+    if parsed.explicit_locator_values:
+        return (
+            "The query contains an explicit locator but no trusted document code. Discover likely documents, then use "
+            "lookup_locator for each shortlisted document before broader lexical search."
+        )
+    return (
+        "The query has no explicit norm. Discover likely documents first, then run scoped lexical retrieval and read "
+        "or expand neighbors only for the most relevant hits."
+    )
 
 
 def _build_debug_trace(result: ControllerAgentResult, *, enabled: bool) -> list[str]:
@@ -567,3 +713,61 @@ def _normalize_inline_text(text: str, limit: int = 180) -> str:
 
 def _contains_any(text: str, needles: tuple[str, ...]) -> bool:
     return any(needle in text for needle in needles)
+
+
+def _build_event(
+    event_type: Literal[
+        "query_received",
+        "query_rewritten",
+        "controller_started",
+        "tool_started",
+        "tool_finished",
+        "evidence_updated",
+        "composer_started",
+        "verifier_started",
+        "answer_ready",
+        "warning",
+    ],
+    message: str,
+    *,
+    payload: dict | None = None,
+    level: Literal["info", "warning"] = "info",
+    is_terminal: bool = False,
+) -> RuntimeEventDTO:
+    return RuntimeEventDTO(
+        event_type=event_type,
+        message=message,
+        payload=payload or {},
+        level=level,
+        is_terminal=is_terminal,
+    )
+
+
+def _build_controller_trajectory_events(result: ControllerAgentResult) -> list[RuntimeEventDTO]:
+    events: list[RuntimeEventDTO] = []
+    ordered_step_ids = sorted({key.rsplit("_", 1)[-1] for key in result.trajectory if "_" in key})
+    for step_id in ordered_step_ids:
+        tool_name_key = f"tool_name_{step_id}"
+        observation_key = f"observation_{step_id}"
+        tool_name = str(result.trajectory.get(tool_name_key, "unknown_tool"))
+        if tool_name_key in result.trajectory:
+            events.append(
+                _build_event(
+                    "tool_started",
+                    f"Запущен tool `{tool_name}`.",
+                    payload={"step_id": step_id, "tool_name": tool_name},
+                )
+            )
+        if observation_key in result.trajectory:
+            events.append(
+                _build_event(
+                    "tool_finished",
+                    f"Tool `{tool_name}` вернул observation.",
+                    payload={
+                        "step_id": step_id,
+                        "tool_name": tool_name,
+                        "observation": _normalize_inline_text(str(result.trajectory[observation_key]), limit=300),
+                    },
+                )
+            )
+    return events

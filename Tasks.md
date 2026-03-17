@@ -215,21 +215,21 @@
 
 ### Блок K. Runtime event streaming
 
-- [ ] Добавить в runtime второй интерфейс `stream_answer_query(...)`.
-- [ ] Сделать event streaming совместимым с уже существующим `answer_query(...)`.
-- [ ] Реализовать генерацию события `query_received`.
-- [ ] Реализовать генерацию события `query_rewritten`.
-- [ ] Реализовать генерацию события `controller_started`.
-- [ ] Реализовать генерацию события `tool_started`.
-- [ ] Реализовать генерацию события `tool_finished`.
-- [ ] Реализовать генерацию события `evidence_updated`.
-- [ ] Реализовать генерацию события `composer_started`.
-- [ ] Реализовать генерацию события `verifier_started`, если verifier реально участвует.
-- [ ] Реализовать генерацию события `warning` для ограничений и fallback-веток.
-- [ ] Реализовать генерацию финального события `answer_ready`.
-- [ ] Сделать так, чтобы event stream не ломал основной synchronous API и тесты Stage 2A.
-- [ ] Добавить unit tests на последовательность runtime events.
-- [ ] Добавить unit tests на fallback-ветки event stream.
+- [x] Добавить в runtime второй интерфейс `stream_answer_query(...)`.
+- [x] Сделать event streaming совместимым с уже существующим `answer_query(...)`.
+- [x] Реализовать генерацию события `query_received`.
+- [x] Реализовать генерацию события `query_rewritten`.
+- [x] Реализовать генерацию события `controller_started`.
+- [x] Реализовать генерацию события `tool_started`.
+- [x] Реализовать генерацию события `tool_finished`.
+- [x] Реализовать генерацию события `evidence_updated`.
+- [x] Реализовать генерацию события `composer_started`.
+- [x] Реализовать генерацию события `verifier_started`, если verifier реально участвует.
+- [x] Реализовать генерацию события `warning` для ограничений и fallback-веток.
+- [x] Реализовать генерацию финального события `answer_ready`.
+- [x] Сделать так, чтобы event stream не ломал основной synchronous API и тесты Stage 2A.
+- [x] Добавить unit tests на последовательность runtime events.
+- [x] Добавить unit tests на fallback-ветки event stream.
 
 ### Блок L. Multi-session UI state
 
