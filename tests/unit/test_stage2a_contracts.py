@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from qanorm.stage2a.contracts import DocumentCandidateDTO, EvidenceItemDTO, RetrievalHitDTO, Stage2AAnswerDTO
+from qanorm.stage2a.contracts import (
+    ConversationMemoryDTO,
+    ConversationMessageDTO,
+    DocumentCandidateDTO,
+    EvidenceItemDTO,
+    RetrievalHitDTO,
+    RuntimeEventDTO,
+    Stage2AAnswerDTO,
+    Stage2AChatSessionDTO,
+)
 from qanorm.stage2a.retrieval.engine import DocumentCandidate, RetrievalHit
 
 
@@ -46,3 +55,19 @@ def test_contract_dtos_convert_retrieval_primitives() -> None:
     assert hit_dto.locator == "5.1"
     assert evidence.evidence_id == "ev-1"
     assert answer.evidence[0].document_id == document_id
+
+
+def test_stage2b_contracts_model_session_and_runtime_state() -> None:
+    event = RuntimeEventDTO(event_type="query_received", message="Получен новый запрос.")
+    message = ConversationMessageDTO(role="user", content="Что СП 63 говорит про анкеровку арматуры?")
+    session = Stage2AChatSessionDTO(
+        session_id="session-1",
+        title="Анкеровка арматуры",
+        messages=[message],
+        memory=ConversationMemoryDTO(active_document_hints=["СП 63.13330.2018"]),
+        runtime_events=[event],
+    )
+
+    assert session.session_id == "session-1"
+    assert session.memory.active_document_hints == ["СП 63.13330.2018"]
+    assert session.runtime_events[0].event_type == "query_received"

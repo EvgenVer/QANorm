@@ -1,7 +1,8 @@
-"""Pydantic contracts shared by the Stage 2A agent layer."""
+"""Pydantic contracts shared by the Stage 2A / Stage 2B agent layer."""
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import UUID
 
@@ -15,6 +16,58 @@ class Stage2AQueryRequest(BaseModel):
 
     query_text: str = Field(min_length=1)
     debug: bool = False
+
+
+class RuntimeEventDTO(BaseModel):
+    """One runtime event streamed to the chat UI while the answer is being built."""
+
+    event_type: Literal[
+        "query_received",
+        "query_rewritten",
+        "controller_started",
+        "tool_started",
+        "tool_finished",
+        "evidence_updated",
+        "composer_started",
+        "verifier_started",
+        "answer_ready",
+        "warning",
+    ]
+    message: str = Field(min_length=1)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    level: Literal["info", "warning"] = "info"
+    is_terminal: bool = False
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ConversationMessageDTO(BaseModel):
+    """One message inside one local Streamlit chat session."""
+
+    role: Literal["user", "assistant", "system"]
+    content: str = Field(min_length=1)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    answer_mode: Literal["direct", "partial", "clarify", "no_answer"] | None = None
+    result_payload: dict[str, Any] | None = None
+
+
+class ConversationMemoryDTO(BaseModel):
+    """Bounded conversational memory stored only inside Streamlit session state."""
+
+    conversation_summary: str = ""
+    active_document_hints: list[str] = Field(default_factory=list)
+    active_locator_hints: list[str] = Field(default_factory=list)
+    open_threads: list[str] = Field(default_factory=list)
+
+
+class Stage2AChatSessionDTO(BaseModel):
+    """One local browser-scoped chat session for Stage 2B."""
+
+    session_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    messages: list[ConversationMessageDTO] = Field(default_factory=list)
+    memory: ConversationMemoryDTO = Field(default_factory=ConversationMemoryDTO)
+    last_result: dict[str, Any] | None = None
+    runtime_events: list[RuntimeEventDTO] = Field(default_factory=list)
 
 
 class DocumentCandidateDTO(BaseModel):

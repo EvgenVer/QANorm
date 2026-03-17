@@ -69,3 +69,12 @@ stage2a:
     show_debug_panel: true
     host: 127.0.0.1
     port: 8501
+
+  conversation:
+    max_messages: 8
+    max_summary_chars: 1200
+    max_document_hints: 6
+    max_locator_hints: 8
+    max_open_threads: 6
+    max_runtime_events: 64
+    max_session_title_chars: 80

@@ -155,11 +155,11 @@
 
 ### Блок I. Session contracts and memory model
 
-- [ ] Добавить DTO `ConversationMessageDTO` для одного chat-сообщения.
-- [ ] Добавить DTO `ConversationMemoryDTO` для bounded session memory.
-- [ ] Добавить DTO `Stage2AChatSessionDTO` для одной локальной чат-сессии.
-- [ ] Добавить DTO `RuntimeEventDTO` для потоковых событий runtime.
-- [ ] Зафиксировать типы runtime events:
+- [x] Добавить DTO `ConversationMessageDTO` для одного chat-сообщения.
+- [x] Добавить DTO `ConversationMemoryDTO` для bounded session memory.
+- [x] Добавить DTO `Stage2AChatSessionDTO` для одной локальной чат-сессии.
+- [x] Добавить DTO `RuntimeEventDTO` для потоковых событий runtime.
+- [x] Зафиксировать типы runtime events:
   - `query_received`
   - `query_rewritten`
   - `controller_started`
@@ -170,18 +170,18 @@
   - `verifier_started`
   - `answer_ready`
   - `warning`
-- [ ] Определить bounded memory policy:
+- [x] Определить bounded memory policy:
   - сколько последних сообщений хранить как raw transcript;
   - какой максимальный размер `conversation_summary`;
   - какие hints включать в memory.
-- [ ] Определить структуру `active_document_hints`.
-- [ ] Определить структуру `active_locator_hints`.
-- [ ] Определить структуру `open_threads`.
-- [ ] Определить правила обновления memory после `direct` ответа.
-- [ ] Определить правила обновления memory после `partial` ответа.
-- [ ] Определить правила обновления memory после `clarify` ответа.
-- [ ] Определить, как хранить `last_result` для повторного рендера evidence/debug без повторного запроса.
-- [ ] Добавить unit tests на DTO и memory normalization helpers.
+- [x] Определить структуру `active_document_hints`.
+- [x] Определить структуру `active_locator_hints`.
+- [x] Определить структуру `open_threads`.
+- [x] Определить правила обновления memory после `direct` ответа.
+- [x] Определить правила обновления memory после `partial` ответа.
+- [x] Определить правила обновления memory после `clarify` ответа.
+- [x] Определить, как хранить `last_result` для повторного рендера evidence/debug без повторного запроса.
+- [x] Добавить unit tests на DTO и memory normalization helpers.
 
 ### Блок J. Session-aware runtime
 

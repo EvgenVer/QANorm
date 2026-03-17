@@ -110,6 +110,18 @@ class Stage2AUiConfig(BaseModel):
     port: int = Field(ge=1, le=65535)
 
 
+class Stage2AConversationConfig(BaseModel):
+    """Bounded in-session conversation memory settings for Stage 2B."""
+
+    max_messages: int = Field(ge=1)
+    max_summary_chars: int = Field(ge=1)
+    max_document_hints: int = Field(ge=1)
+    max_locator_hints: int = Field(ge=1)
+    max_open_threads: int = Field(ge=1)
+    max_runtime_events: int = Field(ge=1)
+    max_session_title_chars: int = Field(ge=1)
+
+
 class Stage2AConfig(BaseModel):
     """Normalized Stage 2A configuration bundle."""
 
@@ -122,6 +134,7 @@ class Stage2AConfig(BaseModel):
     generation: Stage2AGenerationConfig
     retrieval: Stage2ARetrievalConfig
     ui: Stage2AUiConfig
+    conversation: Stage2AConversationConfig
 
 
 def load_stage2a_config(config_path: Path | None = None) -> Stage2AConfig:
