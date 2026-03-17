@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, sessionmaker
 
 from qanorm.db.session import create_session_factory
+from qanorm.normalizers.codes import normalize_document_code
 from qanorm.stage2a.agents import Composer, ControllerAgent, ControllerAgentResult, GroundingVerifier
 from qanorm.stage2a.config import Stage2AConfig, get_stage2a_config
 from qanorm.stage2a.contracts import (
@@ -40,6 +41,12 @@ _CLARIFY_REQUEST_RE = re.compile(
 )
 _FOLLOW_UP_RE = re.compile(
     r"\b(Р°\s+С‡С‚Рѕ|Р°\s+РєР°Рє|Р°\s+РґР»СЏ|РїРѕ\s+РЅРµРјСѓ|РїРѕ\s+РЅРµР№|РїРѕ\s+РЅРёРј|РїРѕ\s+СЌС‚РѕРјСѓ|РїРѕ\s+СЌС‚РѕР№|РїРѕ\s+СЌС‚РёРј|РґР»СЏ\s+РЅРёС…|РґР»СЏ\s+РЅРµРіРѕ|РґР»СЏ\s+РЅРµРµ)\b",
+    re.IGNORECASE,
+)
+
+
+_DOCUMENT_CODE_HINT_RE = re.compile(
+    r"\b(?:СП|СНиП|СНИП|ГОСТ|SP|SNIP|GOST)\s*[A-Za-zА-Яа-я0-9][A-Za-zА-Яа-я0-9.\-/]*",
     re.IGNORECASE,
 )
 
@@ -333,6 +340,8 @@ def _classify_conversation_turn(
     has_context = bool(chat_session.messages or chat_session.memory.conversation_summary or chat_session.memory.active_document_hints)
     if not has_context:
         return "new_question"
+    if _is_context_shift(query_text=query_text, chat_session=chat_session):
+        return "new_question"
 
     lowered = normalized.casefold()
 
@@ -382,6 +391,27 @@ def _build_effective_query(
             + " | ".join(f"{item.role}: {_normalize_inline_text(item.content)}" for item in recent_messages)
         )
 
+    last_assistant_message = next((item for item in reversed(chat_session.messages) if item.role == "assistant"), None)
+    if last_assistant_message is not None and query_kind in {"clarify", "expand_answer", "follow_up"}:
+        parts.append(f"Предыдущий ответ: {_normalize_inline_text(last_assistant_message.content, limit=240)}")
+
+    guidance = {
+        "follow_up": (
+            "Инструкция: продолжай текущую тему. Сначала используй активные документы и локаторы, "
+            "но при необходимости расширяй evidence pack дополнительными retrieval units и соседним контекстом."
+        ),
+        "clarify": (
+            "Инструкция: пользователь просит уточнить ответ или показать ссылку. Приоритетно проверяй активные "
+            "document/locator hints, ищи точный пункт, citation и локальный контекст."
+        ),
+        "expand_answer": (
+            "Инструкция: пользователь просит дополнить предыдущий ответ. Расширяй evidence pack, поднимай дополнительные "
+            "locator hits и retrieval units в том же документе, чтобы partial мог стать direct."
+        ),
+    }
+    if query_kind in guidance:
+        parts.append(guidance[query_kind])
+
     prefix = {
         "new_question": "Вопрос пользователя",
         "follow_up": "Follow-up вопрос пользователя",
@@ -391,6 +421,40 @@ def _build_effective_query(
     parts.append(f"{prefix}: {query_text}")
     effective_query = "\n".join(part for part in parts if part).strip()
     return effective_query[: config.conversation.max_summary_chars * 2]
+
+
+def _is_context_shift(*, query_text: str, chat_session: Stage2AChatSessionDTO) -> bool:
+    active_documents = {_normalize_document_hint(value) for value in chat_session.memory.active_document_hints if value}
+    active_documents.discard(None)
+    if not active_documents:
+        return False
+
+    query_documents = {
+        normalized
+        for normalized in (
+            _normalize_document_hint(match.group(0))
+            for match in _DOCUMENT_CODE_HINT_RE.finditer(query_text)
+        )
+        if normalized
+    }
+    if not query_documents:
+        return False
+    return query_documents.isdisjoint(active_documents)
+
+
+def _normalize_document_hint(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = normalize_document_code(value)
+    if not normalized:
+        return None
+    prefix, _, rest = normalized.partition(" ")
+    if not rest:
+        return normalized.casefold()
+    family = rest.split(".", 1)[0]
+    if family:
+        return f"{prefix} {family}".casefold()
+    return normalized.casefold()
 
 
 def _build_policy_hint(parsed: ParsedQuery) -> str:
