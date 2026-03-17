@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Any
 
 import streamlit as st
 
 from qanorm.stage2a.config import get_stage2a_config
-from qanorm.stage2a.contracts import Stage2AConversationalQueryRequest
-from qanorm.stage2a.runtime import Stage2AQueryResult, Stage2ARuntime
+from qanorm.stage2a.contracts import RuntimeEventDTO, Stage2AChatSessionDTO, Stage2AConversationalQueryRequest
+from qanorm.stage2a.runtime import Stage2AConversationalQueryResult, Stage2AQueryResult, Stage2ARuntime
+from qanorm.stage2a.ui.rendering import format_runtime_event, iter_markdown_chunks
 from qanorm.stage2a.ui.session_state import (
     create_new_ui_session,
     ensure_ui_sessions,
@@ -46,23 +47,44 @@ def main() -> None:
     with st.chat_message("user"):
         st.markdown(query_text)
 
+    stored_session = active_session
     with st.chat_message("assistant"):
-        with st.status("Выполняется Stage 2A/2B pipeline", expanded=config.ui.show_debug_panel):
-            conversational_result = runtime.answer_conversation_turn(
-                Stage2AConversationalQueryRequest(
-                    query_text=query_text,
-                    chat_session=active_session,
-                )
+        answer_placeholder = st.empty()
+        debug_placeholder = st.empty()
+        streamed_events: list[RuntimeEventDTO] = []
+        conversational_result: Stage2AConversationalQueryResult | None = None
+
+        for event in runtime.stream_conversation_turn(
+            Stage2AConversationalQueryRequest(
+                query_text=query_text,
+                chat_session=active_session,
             )
-        response_placeholder = st.empty()
+        ):
+            streamed_events.append(event)
+            if event.event_type == "answer_ready":
+                conversational_result = Stage2AConversationalQueryResult.model_validate(
+                    event.payload["conversation_result"]
+                )
+                continue
+            _render_runtime_trace(debug_placeholder, streamed_events, expanded=config.ui.show_debug_panel)
+
+        if conversational_result is None:
+            raise RuntimeError("Runtime stream finished without final conversational result")
+
+        _render_runtime_trace(debug_placeholder, streamed_events, expanded=False)
         answer_text = conversational_result.result.answer.answer_text
         if config.ui.stream:
-            response_placeholder.write_stream(_stream_answer(answer_text))
-        else:
-            response_placeholder.markdown(answer_text)
-        _render_result_panels(conversational_result.result)
+            _stream_markdown_answer(answer_placeholder, answer_text)
+        answer_placeholder.markdown(answer_text)
 
-    replace_active_ui_session(st.session_state, conversational_result.chat_session)
+        stored_session = _store_result_payload(
+            conversational_result.chat_session,
+            conversational_result.result,
+            streamed_events,
+        )
+        _render_result_panels(stored_session.last_result or conversational_result.result)
+
+    replace_active_ui_session(st.session_state, stored_session)
 
 
 @st.cache_resource(show_spinner=False)
@@ -106,12 +128,48 @@ def _session_title(session_id: str) -> str:
     return session.title
 
 
-def _stream_answer(text: str) -> Iterable[str]:
-    for chunk in text.split():
-        yield f"{chunk} "
+def _stream_markdown_answer(placeholder: Any, text: str) -> None:
+    rendered = ""
+    for chunk in iter_markdown_chunks(text):
+        rendered += chunk
+        placeholder.markdown(f"{rendered}\n\n`...`")
+    placeholder.markdown(text)
 
 
-def _render_result_panels(result_payload: Stage2AQueryResult | dict) -> None:
+def _render_runtime_trace(placeholder: Any, events: list[RuntimeEventDTO], *, expanded: bool) -> None:
+    with placeholder.container():
+        with st.expander("Ход агента", expanded=expanded):
+            if not events:
+                st.write("События пока не поступили.")
+                return
+            for event in events:
+                if event.event_type == "answer_ready":
+                    continue
+                st.markdown(format_runtime_event(event))
+
+
+def _store_result_payload(
+    chat_session: Stage2AChatSessionDTO,
+    result: Stage2AQueryResult,
+    runtime_events: list[RuntimeEventDTO],
+) -> Stage2AChatSessionDTO:
+    result_payload = result.model_dump(mode="json")
+    result_payload["runtime_events"] = [event.model_dump(mode="json") for event in runtime_events]
+
+    messages = list(chat_session.messages)
+    if messages and messages[-1].role == "assistant":
+        messages[-1] = messages[-1].model_copy(update={"result_payload": result_payload})
+
+    return chat_session.model_copy(
+        update={
+            "messages": messages,
+            "last_result": result_payload,
+            "runtime_events": runtime_events,
+        }
+    )
+
+
+def _render_result_panels(result_payload: Stage2AQueryResult | dict[str, Any]) -> None:
     result = result_payload if isinstance(result_payload, dict) else result_payload.model_dump(mode="json")
 
     answer = result["answer"]
@@ -139,13 +197,21 @@ def _render_result_panels(result_payload: Stage2AQueryResult | dict) -> None:
 
     if get_stage2a_config().ui.show_debug_panel:
         with st.expander("Debug Trace", expanded=False):
-            st.write(f"Policy hint: {controller['policy_hint']}")
-            st.write(f"Selected evidence ids: {', '.join(controller['selected_evidence_ids']) or '-'}")
-            for entry in answer["debug_trace"]:
-                st.code(entry)
+            runtime_events = result.get("runtime_events", [])
+            if runtime_events:
+                for item in runtime_events:
+                    event = RuntimeEventDTO.model_validate(item)
+                    if event.event_type == "answer_ready":
+                        continue
+                    st.markdown(format_runtime_event(event))
+            else:
+                st.write(f"Policy hint: {controller['policy_hint']}")
+                st.write(f"Selected evidence ids: {', '.join(controller['selected_evidence_ids']) or '-'}")
+                for entry in answer["debug_trace"]:
+                    st.code(entry)
 
 
-def _format_ui_citation(item: dict) -> str:
+def _format_ui_citation(item: dict[str, Any]) -> str:
     parts: list[str] = []
     if item.get("document_display_code"):
         parts.append(str(item["document_display_code"]))

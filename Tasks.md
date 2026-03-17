@@ -250,18 +250,18 @@
 
 ### Блок M. Streamlit chat rendering and formatting
 
-- [ ] Перестать стримить answer по словам через `split()`.
-- [ ] Реализовать chunk-aware streaming, который сохраняет переносы строк.
-- [ ] После завершения стрима всегда выполнять финальный `markdown()` render полного ответа.
-- [ ] Разделить визуально debug stream и финальный answer render.
-- [ ] Сделать так, чтобы debug trace стримился в assistant message во время ответа.
-- [ ] Сделать так, чтобы после завершения ответа debug trace автоматически сворачивался.
-- [ ] Оставить пользователю возможность раскрыть debug trace вручную.
-- [ ] Сохранить финальный `result` в session state активной сессии.
-- [ ] Исправить рендер evidence panel в рамках активной сессии.
-- [ ] Исправить рендер limitations в рамках активной сессии.
-- [ ] Убедиться, что formatting не требует следующего вопроса для нормального отображения.
-- [ ] Добавить smoke tests / scripted checks на markdown rendering helpers, если они будут вынесены из `app.py`.
+- [x] Перестать стримить answer по словам через `split()`.
+- [x] Реализовать chunk-aware streaming, который сохраняет переносы строк.
+- [x] После завершения стрима всегда выполнять финальный `markdown()` render полного ответа.
+- [x] Разделить визуально debug stream и финальный answer render.
+- [x] Сделать так, чтобы debug trace стримился в assistant message во время ответа.
+- [x] Сделать так, чтобы после завершения ответа debug trace автоматически сворачивался.
+- [x] Оставить пользователю возможность раскрыть debug trace вручную.
+- [x] Сохранить финальный `result` в session state активной сессии.
+- [x] Исправить рендер evidence panel в рамках активной сессии.
+- [x] Исправить рендер limitations в рамках активной сессии.
+- [x] Убедиться, что formatting не требует следующего вопроса для нормального отображения.
+- [x] Добавить smoke tests / scripted checks на markdown rendering helpers, если они будут вынесены из `app.py`.
 
 ### Блок N. Conversational retrieval behavior
 
