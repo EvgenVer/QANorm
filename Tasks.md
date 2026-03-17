@@ -11,6 +11,8 @@
 - baseline-метрики первого полного eval: `document hit@3 = 0.74`, `locator hit@5 = 0.00`, `expected mode match rate = 0.66`, `partial answer rate = 0.1933`;
 - финальные метрики после `H5` и чистого parallel eval `v5`: `document hit@3 = 0.9267`, `locator hit@5 = 1.00`, `grounded answer rate = 1.00`, `expected mode match rate = 0.7867`, `partial answer rate = 0.0467`, `wrong document rate = 0.00`;
 - `Stage 2A MVP` проходит все зафиксированные acceptance thresholds и готов к приемке; открытых implementation-задач не осталось.
+- следующий implementation-этап: `Stage 2B` с conversational memory, multi-session UI и потоковым debug trace;
+- `Stage 2B` сознательно реализуется без авторизации и без сохранения chat sessions в БД; память живет только в `st.session_state` до reload браузера.
 
 ## Stage 1
 
@@ -149,6 +151,145 @@
 - [x] Убрать `SP 1.0` из retrieval candidate set и закрыть short-code prefix leakage вида `СП 1 -> СП 107`.
 - [x] Подготовить targeted plan repair корпуса: удалить или изолировать placeholder `SP 1.0`, восстановить canonical ingest для `ГОСТ 27751-2014` и `СП 1.13130.2020`, затем пересобрать aliases и retrieval units для этих семейств.
 
+## Stage 2B. Conversational Session Memory and UI
+
+### Блок I. Session contracts and memory model
+
+- [ ] Добавить DTO `ConversationMessageDTO` для одного chat-сообщения.
+- [ ] Добавить DTO `ConversationMemoryDTO` для bounded session memory.
+- [ ] Добавить DTO `Stage2AChatSessionDTO` для одной локальной чат-сессии.
+- [ ] Добавить DTO `RuntimeEventDTO` для потоковых событий runtime.
+- [ ] Зафиксировать типы runtime events:
+  - `query_received`
+  - `query_rewritten`
+  - `controller_started`
+  - `tool_started`
+  - `tool_finished`
+  - `evidence_updated`
+  - `composer_started`
+  - `verifier_started`
+  - `answer_ready`
+  - `warning`
+- [ ] Определить bounded memory policy:
+  - сколько последних сообщений хранить как raw transcript;
+  - какой максимальный размер `conversation_summary`;
+  - какие hints включать в memory.
+- [ ] Определить структуру `active_document_hints`.
+- [ ] Определить структуру `active_locator_hints`.
+- [ ] Определить структуру `open_threads`.
+- [ ] Определить правила обновления memory после `direct` ответа.
+- [ ] Определить правила обновления memory после `partial` ответа.
+- [ ] Определить правила обновления memory после `clarify` ответа.
+- [ ] Определить, как хранить `last_result` для повторного рендера evidence/debug без повторного запроса.
+- [ ] Добавить unit tests на DTO и memory normalization helpers.
+
+### Блок J. Session-aware runtime
+
+- [ ] Расширить runtime API так, чтобы он принимал состояние активной чат-сессии.
+- [ ] Добавить отдельный входной объект `Stage2AConversationalQueryRequest`.
+- [ ] Реализовать выделение типа нового пользовательского сообщения:
+  - новый вопрос;
+  - follow-up;
+  - уточнение;
+  - просьба дополнить предыдущий ответ;
+  - сброс/смена контекста внутри сессии.
+- [ ] Реализовать `effective query builder`.
+- [ ] Реализовать использование `conversation_summary` при построении effective query.
+- [ ] Реализовать использование последних сообщений при построении effective query.
+- [ ] Реализовать использование `active_document_hints` как soft prior.
+- [ ] Реализовать использование `active_locator_hints` как soft prior.
+- [ ] Реализовать использование `open_threads` для follow-up вопросов.
+- [ ] Сделать так, чтобы follow-up запросы не воспринимались как новый независимый вопрос с нуля.
+- [ ] Сделать так, чтобы запросы вида `дополни`, `продолжи`, `а что для ...`, `какой пункт?` использовали предыдущий ответ как контекст.
+- [ ] Реализовать повторный retrieval с учетом session memory.
+- [ ] Реализовать правило, при котором follow-up может расширять evidence pack, а не только переиспользовать старый.
+- [ ] Реализовать обновление `conversation_summary` после каждого ответа.
+- [ ] Реализовать обновление `active_document_hints` после каждого ответа.
+- [ ] Реализовать обновление `active_locator_hints` после каждого ответа.
+- [ ] Реализовать обновление `open_threads` после каждого ответа.
+- [ ] Сделать так, чтобы смена темы внутри одной сессии не блокировалась жесткими prior-ами предыдущего вопроса.
+- [ ] Добавить unit tests на классификацию follow-up/clarify/expand-message.
+- [ ] Добавить unit tests на `effective query builder`.
+- [ ] Добавить unit tests на memory update policy.
+- [ ] Добавить integration tests на conversational runtime flow без UI.
+
+### Блок K. Runtime event streaming
+
+- [ ] Добавить в runtime второй интерфейс `stream_answer_query(...)`.
+- [ ] Сделать event streaming совместимым с уже существующим `answer_query(...)`.
+- [ ] Реализовать генерацию события `query_received`.
+- [ ] Реализовать генерацию события `query_rewritten`.
+- [ ] Реализовать генерацию события `controller_started`.
+- [ ] Реализовать генерацию события `tool_started`.
+- [ ] Реализовать генерацию события `tool_finished`.
+- [ ] Реализовать генерацию события `evidence_updated`.
+- [ ] Реализовать генерацию события `composer_started`.
+- [ ] Реализовать генерацию события `verifier_started`, если verifier реально участвует.
+- [ ] Реализовать генерацию события `warning` для ограничений и fallback-веток.
+- [ ] Реализовать генерацию финального события `answer_ready`.
+- [ ] Сделать так, чтобы event stream не ломал основной synchronous API и тесты Stage 2A.
+- [ ] Добавить unit tests на последовательность runtime events.
+- [ ] Добавить unit tests на fallback-ветки event stream.
+
+### Блок L. Multi-session UI state
+
+- [ ] Добавить в `Streamlit` sidebar для управления чат-сессиями.
+- [ ] Добавить `st.session_state.sessions`.
+- [ ] Добавить `st.session_state.active_session_id`.
+- [ ] Реализовать создание первой сессии по умолчанию при первом открытии UI.
+- [ ] Реализовать кнопку `Новая сессия`.
+- [ ] Реализовать генерацию локального `session_id`.
+- [ ] Реализовать human-readable title для новой сессии.
+- [ ] Реализовать переключение между сессиями в sidebar.
+- [ ] Реализовать кнопку `Сбросить текущую сессию`.
+- [ ] Сделать так, чтобы сброс очищал только активную сессию.
+- [ ] Сделать так, чтобы другие локальные сессии пользователя не затрагивались.
+- [ ] Сделать так, чтобы transcript, memory и last result были изолированы между локальными сессиями.
+- [ ] Убедиться, что никакое chat-state не живет в `@st.cache_resource`.
+- [ ] Добавить unit tests на session state helpers, если они будут вынесены в отдельный модуль.
+
+### Блок M. Streamlit chat rendering and formatting
+
+- [ ] Перестать стримить answer по словам через `split()`.
+- [ ] Реализовать chunk-aware streaming, который сохраняет переносы строк.
+- [ ] После завершения стрима всегда выполнять финальный `markdown()` render полного ответа.
+- [ ] Разделить визуально debug stream и финальный answer render.
+- [ ] Сделать так, чтобы debug trace стримился в assistant message во время ответа.
+- [ ] Сделать так, чтобы после завершения ответа debug trace автоматически сворачивался.
+- [ ] Оставить пользователю возможность раскрыть debug trace вручную.
+- [ ] Сохранить финальный `result` в session state активной сессии.
+- [ ] Исправить рендер evidence panel в рамках активной сессии.
+- [ ] Исправить рендер limitations в рамках активной сессии.
+- [ ] Убедиться, что formatting не требует следующего вопроса для нормального отображения.
+- [ ] Добавить smoke tests / scripted checks на markdown rendering helpers, если они будут вынесены из `app.py`.
+
+### Блок N. Conversational retrieval behavior
+
+- [ ] Реализовать policy follow-up retrieval для вопросов, продолжающих предыдущую тему.
+- [ ] Реализовать policy для уточняющих вопросов по уже найденному документу.
+- [ ] Реализовать policy для вопросов `какой пункт?`, `где это написано?`, `приведи ссылку`.
+- [ ] Реализовать policy для вопросов `дополни ответ`, `продолжи`, `что еще`.
+- [ ] Реализовать policy, при которой новый follow-up может поднимать дополнительные locator hits и retrieval units.
+- [ ] Реализовать policy, при которой предыдущий `partial` ответ может стать `direct` после follow-up.
+- [ ] Реализовать policy смены контекста, если пользователь явно уводит разговор в другой документ или другую тему.
+- [ ] Добавить unit/integration tests на сценарии:
+  - follow-up без повторного упоминания нормы;
+  - уточнение по найденному документу;
+  - дополнение предыдущего partial ответа;
+  - переход к новой теме внутри той же сессии.
+
+### Блок O. Manual acceptance and regression coverage
+
+- [ ] Обновить ручной smoke checklist под conversational UI.
+- [ ] Добавить ручной сценарий `вопрос -> follow-up -> уточнение`.
+- [ ] Добавить ручной сценарий `partial -> дополни ответ`.
+- [ ] Добавить ручной сценарий `Новая сессия`.
+- [ ] Добавить ручной сценарий `две независимые сессии в одном UI`.
+- [ ] Добавить ручной сценарий `debug trace стримится в чат`.
+- [ ] Добавить ручной сценарий `форматирование корректно без следующего вопроса`.
+- [ ] Добавить integration tests на изоляцию session state между несколькими локальными чатами.
+- [ ] Подготовить краткий readiness report по `Stage 2B`.
+
 ## Покрытие плана
 
 - Блок `A` покрывает подготовку Stage 1 под Stage 2A.
@@ -163,3 +304,10 @@
 - Блок `H2` покрывает locator-aware retrieval remediation.
 - Блок `H3` покрывает interactive policy, clarify policy и answer-mode remediation.
 - Блок `H4` покрывает повторный eval-цикл, сравнение baseline/post-fix и итоговую приемку.
+- Блок `I` покрывает contracts и bounded memory model для Stage 2B.
+- Блок `J` покрывает session-aware runtime и effective query logic.
+- Блок `K` покрывает runtime event streaming.
+- Блок `L` покрывает multi-session UI state.
+- Блок `M` покрывает chat rendering, streaming trace и markdown-formatting fix.
+- Блок `N` покрывает conversational retrieval behavior.
+- Блок `O` покрывает ручную приемку и regression coverage для Stage 2B.
