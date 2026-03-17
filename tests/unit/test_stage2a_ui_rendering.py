@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from qanorm.stage2a.contracts import RuntimeEventDTO
-from qanorm.stage2a.ui.rendering import format_runtime_event, iter_markdown_chunks
+from qanorm.stage2a.ui.rendering import format_panel_value, format_runtime_event, iter_markdown_chunks
 
 
 def test_iter_markdown_chunks_preserves_newlines_and_content() -> None:
@@ -51,3 +51,21 @@ def test_format_runtime_event_includes_tool_observation() -> None:
     assert "tool_finished" in rendered
     assert "lookup_locator" in rendered
     assert "10.3.8" in rendered
+
+
+def test_format_runtime_event_includes_controller_reasoning_summary() -> None:
+    event = RuntimeEventDTO(
+        event_type="controller_reasoning",
+        message="Controller summarized the retrieval state.",
+        payload={"summary": "The agent kept the reinforced-concrete topic and switched to SP 63."},
+    )
+
+    rendered = format_runtime_event(event)
+
+    assert "controller_reasoning" in rendered
+    assert "SP 63" in rendered
+
+
+def test_format_panel_value_uses_text_field_from_nested_mapping() -> None:
+    assert format_panel_value({"text": "Readable limitation"}) == "Readable limitation"
+    assert "foo" in format_panel_value({"foo": "bar"})

@@ -35,6 +35,8 @@ _TOPIC_DOCUMENT_PRIORS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (("фундамент", "основан", "грунт", "свай", "осад"), ("СП 22", "СП 24")),
     (("арматур", "железобет", "бетон", "плит", "колонн"), ("СП 63",)),
 )
+_REINFORCED_CONCRETE_TRIGGERS = ("арматур", "железобет", "бетон", "защит", "стерж", "плит", "колонн", "балк", "ригел")
+_LIGHTWEIGHT_CONCRETE_TRIGGERS = ("легк", "ячеист", "керамзит", "пориз", "автоклав")
 
 
 @dataclass(frozen=True, slots=True)
@@ -466,6 +468,7 @@ class RetrievalEngine:
             score = candidate.score
             score += self._explicit_code_match_bonus(query, candidate)
             score += self._topic_prior_bonus(candidate, topic_priors)
+            score += self._reinforced_concrete_bonus(query, candidate)
             version = self.document_versions.get(candidate.document_version_id) if candidate.document_version_id else None
             if version is not None:
                 if version.is_active:
@@ -505,6 +508,27 @@ class RetrievalEngine:
             )
         )
         return reranked
+
+    def _reinforced_concrete_bonus(self, query: ParsedQuery, candidate: DocumentCandidate) -> float:
+        explicit_families = {_document_family(code) for code in query.explicit_document_codes}
+        candidate_family = _document_family(candidate.display_code)
+        if candidate_family in explicit_families:
+            return 0.0
+
+        tokens = query.lexical_tokens
+        if not any(any(token.startswith(trigger) for trigger in _REINFORCED_CONCRETE_TRIGGERS) for token in tokens):
+            return 0.0
+
+        lightweight_requested = any(
+            any(token.startswith(trigger) for trigger in _LIGHTWEIGHT_CONCRETE_TRIGGERS) for token in tokens
+        )
+        if _document_matches_family(candidate.display_code, "СП 63"):
+            return 0.28 if not lightweight_requested else 0.10
+        if _document_matches_family(candidate.display_code, "СП 351"):
+            return 0.20 if lightweight_requested else -0.30
+        if _document_matches_family(candidate.display_code, "СП 52"):
+            return -0.45
+        return 0.0
 
     def _explicit_code_match_bonus(self, query: ParsedQuery, candidate: DocumentCandidate) -> float:
         if not query.explicit_document_codes:

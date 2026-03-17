@@ -446,3 +446,101 @@ def test_conversational_explicit_new_document_resets_previous_context(monkeypatc
     assert result.query_kind == "new_question"
     assert result.effective_query == "Что СП 20 говорит о сочетаниях нагрузок?"
     assert captured["retrieval_query"] == "Что СП 20 говорит о сочетаниях нагрузок?"
+def test_conversational_short_document_override_keeps_previous_topic(monkeypatch) -> None:
+    captured: dict[str, str] = {}
+    evidence = _build_strong_evidence()[:1]
+
+    class _FakeRetrieval:
+        def parse_query(self, query_text: str):
+            captured["retrieval_query"] = query_text
+            return SimpleNamespace(
+                raw_text=query_text,
+                normalized_text=query_text,
+                explicit_document_codes=["РЎРџ 63"],
+                explicit_locator_values=[],
+                lexical_tokens=["protective", "cover"],
+            )
+
+        def build_evidence_pack(self, query_text: str):
+            return []
+
+    class _FakeController:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def run(self, query_text: str):
+            return SimpleNamespace(
+                query_text=query_text,
+                answer_mode="partial",
+                reasoning_summary="Controller kept the topic and switched the preferred document family.",
+                selected_evidence_ids=["ev-0001"],
+                evidence=evidence,
+                trajectory={"step": "follow-up-override"},
+                policy_hint="conversation aware",
+                iterations_used=1,
+            )
+
+    class _FakeComposer:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def compose(self, **kwargs):
+            return SimpleNamespace(
+                answer_mode="partial",
+                answer_text="РћС‚РІРµС‚ РїРѕ РЎРџ 63 РїСЂРё СЃРѕС…СЂР°РЅРµРЅРёРё С‚РµРјС‹ Р·Р°С‰РёС‚РЅРѕРіРѕ СЃР»РѕСЏ.",
+                claims=[AnswerClaimDTO(text="Supported claim.", evidence_ids=["ev-0001"])],
+                evidence=evidence,
+                limitations=[],
+            )
+
+    class _FakeVerifier:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def verify(self, **kwargs):
+            return Stage2AAnswerDTO(
+                mode="direct",
+                answer_text="РћС‚РІРµС‚ РїРѕ РЎРџ 63 РїСЂРё СЃРѕС…СЂР°РЅРµРЅРёРё С‚РµРјС‹ Р·Р°С‰РёС‚РЅРѕРіРѕ СЃР»РѕСЏ.",
+                claims=[AnswerClaimDTO(text="Supported claim.", evidence_ids=["ev-0001"])],
+                evidence=evidence,
+                limitations=[],
+            )
+
+    session = create_chat_session("session-short-override")
+    session = session.model_copy(
+        update={
+            "messages": [
+                ConversationMessageDTO(role="user", content="\u0427\u0442\u043e \u043f\u043e \u0437\u0430\u0449\u0438\u0442\u043d\u043e\u043c\u0443 \u0441\u043b\u043e\u044e \u0430\u0440\u043c\u0430\u0442\u0443\u0440\u044b?"),
+                ConversationMessageDTO(role="assistant", content="\u0427\u0430\u0441\u0442\u0438\u0447\u043d\u044b\u0439 \u043e\u0442\u0432\u0435\u0442 \u043f\u043e \u0437\u0430\u0449\u0438\u0442\u043d\u043e\u043c\u0443 \u0441\u043b\u043e\u044e."),
+            ],
+            "memory": session.memory.model_copy(
+                update={
+                    "conversation_summary": "\u041e\u0431\u0441\u0443\u0436\u0434\u0430\u0435\u0442\u0441\u044f \u0437\u0430\u0449\u0438\u0442\u043d\u044b\u0439 \u0441\u043b\u043e\u0439 \u0430\u0440\u043c\u0430\u0442\u0443\u0440\u044b \u0432 \u0436\u0435\u043b\u0435\u0437\u043e\u0431\u0435\u0442\u043e\u043d\u043d\u044b\u0445 \u043a\u043e\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u044f\u0445.",
+                    "active_document_hints": ["\u0421\u041f 52.101.2003"],
+                    "active_locator_hints": ["5.5.1"],
+                    "open_threads": ["\u0437\u0430\u0449\u0438\u0442\u043d\u044b\u0439 \u0441\u043b\u043e\u0439 \u0430\u0440\u043c\u0430\u0442\u0443\u0440\u044b :: \u043d\u0443\u0436\u043d\u043e \u0443\u0442\u043e\u0447\u043d\u0438\u0442\u044c \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u044f"],
+                }
+            ),
+        }
+    )
+
+    runtime = Stage2ARuntime(
+        session_factory=_FakeSessionFactory(),
+        model_bundle=SimpleNamespace(controller=object(), composer=object(), verifier=object(), reranker=object(), provider_name="gemini"),
+        controller_factory=_FakeController,
+        composer_factory=_FakeComposer,
+        verifier_factory=_FakeVerifier,
+    )
+    monkeypatch.setattr("qanorm.stage2a.runtime.RetrievalEngine", lambda session: _FakeRetrieval())
+
+    result = runtime.answer_conversation_turn(
+        Stage2AConversationalQueryRequest(
+            query_text="\u0410 \u0447\u0442\u043e \u043f\u043e \u0421\u041f 63?",
+            chat_session=session,
+        )
+    )
+
+    assert result.query_kind == "follow_up"
+    assert "Requested document override:" in result.effective_query
+    assert "Keep the current technical topic" in result.effective_query
+    assert captured["retrieval_query"] != "\u0410 \u0447\u0442\u043e \u043f\u043e \u0421\u041f 63?"

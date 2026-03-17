@@ -25,6 +25,7 @@ class RuntimeEventDTO(BaseModel):
         "query_received",
         "query_rewritten",
         "controller_started",
+        "controller_reasoning",
         "tool_started",
         "tool_finished",
         "evidence_updated",

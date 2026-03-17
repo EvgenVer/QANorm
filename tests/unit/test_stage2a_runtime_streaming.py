@@ -155,6 +155,7 @@ def test_runtime_stream_answer_query_emits_stage_events(monkeypatch) -> None:
         "controller_started",
         "tool_started",
         "tool_finished",
+        "controller_reasoning",
         "evidence_updated",
         "composer_started",
         "verifier_started",
@@ -196,6 +197,7 @@ def test_runtime_stream_answer_query_emits_warning_for_missing_evidence(monkeypa
     assert [event.event_type for event in events] == [
         "query_received",
         "controller_started",
+        "controller_reasoning",
         "evidence_updated",
         "warning",
         "answer_ready",

@@ -7,6 +7,57 @@ from qanorm.stage2a.retrieval.engine import DocumentCandidate, RetrievalEngine, 
 from qanorm.stage2a.retrieval.query_parser import ParsedQuery
 
 
+def test_rerank_document_candidates_prefers_sp63_for_generic_reinforced_concrete_queries() -> None:
+    retrieval = RetrievalEngine(MagicMock())
+    active_version = type("Version", (), {"is_active": True, "is_outdated": False})()
+    retrieval.document_versions.get = lambda version_id: active_version
+    query = ParsedQuery(
+        raw_text="\u0427\u0442\u043e \u043f\u043e \u0437\u0430\u0449\u0438\u0442\u043d\u043e\u043c\u0443 \u0441\u043b\u043e\u044e \u0430\u0440\u043c\u0430\u0442\u0443\u0440\u044b \u0432 \u0436\u0435\u043b\u0435\u0437\u043e\u0431\u0435\u0442\u043e\u043d\u043d\u044b\u0445 \u043a\u043e\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u044f\u0445?",
+        normalized_text="\u0427\u0442\u043e \u043f\u043e \u0437\u0430\u0449\u0438\u0442\u043d\u043e\u043c\u0443 \u0441\u043b\u043e\u044e \u0430\u0440\u043c\u0430\u0442\u0443\u0440\u044b \u0432 \u0436\u0435\u043b\u0435\u0437\u043e\u0431\u0435\u0442\u043e\u043d\u043d\u044b\u0445 \u043a\u043e\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u044f\u0445?",
+        explicit_document_codes=[],
+        explicit_locator_values=[],
+        lexical_query="\u0437\u0430\u0449\u0438\u0442\u043d\u044b\u0439 \u0441\u043b\u043e\u0439 \u0430\u0440\u043c\u0430\u0442\u0443\u0440\u044b \u0436\u0435\u043b\u0435\u0437\u043e\u0431\u0435\u0442\u043e\u043d",
+        lexical_tokens=["\u0437\u0430\u0449\u0438\u0442", "\u0441\u043b\u043e\u0439", "\u0430\u0440\u043c\u0430\u0442\u0443\u0440", "\u0436\u0435\u043b\u0435\u0437\u043e\u0431\u0435\u0442\u043e\u043d"],
+    )
+    candidates = [
+        DocumentCandidate(
+            document_id=uuid4(),
+            document_version_id=uuid4(),
+            score=0.95,
+            reason="lexical",
+            matched_value="\u0421\u041f 351",
+            display_code="\u0421\u041f 351.1325800.2017",
+            title="Lightweight concrete structures",
+        ),
+        DocumentCandidate(
+            document_id=uuid4(),
+            document_version_id=uuid4(),
+            score=0.93,
+            reason="lexical",
+            matched_value="\u0421\u041f 52",
+            display_code="\u0421\u041f 52-101-2003",
+            title="Concrete and reinforced concrete structures",
+        ),
+        DocumentCandidate(
+            document_id=uuid4(),
+            document_version_id=uuid4(),
+            score=0.9,
+            reason="lexical",
+            matched_value="\u0421\u041f 63",
+            display_code="\u0421\u041f 63.13330.2018",
+            title="Concrete and reinforced concrete structures",
+        ),
+    ]
+
+    reranked = retrieval._rerank_document_candidates(query, candidates)
+
+    assert [item.display_code for item in reranked[:3]] == [
+        "\u0421\u041f 63.13330.2018",
+        "\u0421\u041f 351.1325800.2017",
+        "\u0421\u041f 52-101-2003",
+    ]
+
+
 def test_merge_and_rerank_hits_prefers_contextual_retrieval_unit_over_weak_node_locator() -> None:
     retrieval = RetrievalEngine(MagicMock())
     document_id = uuid4()

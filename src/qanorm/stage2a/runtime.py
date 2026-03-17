@@ -220,6 +220,11 @@ class Stage2ARuntime:
             controller_result = _coerce_controller_result(controller.run(retrieval_query_text))
             for event in _build_controller_trajectory_events(controller_result):
                 yield event
+            yield _build_event(
+                "controller_reasoning",
+                "Controller summarized the current retrieval state.",
+                payload={"summary": controller_result.reasoning_summary},
+            )
 
             runtime_evidence = _load_runtime_evidence_pack(retrieval, retrieval_query_text)
             controller_result = _enrich_controller_result(
@@ -344,6 +349,10 @@ def _classify_conversation_turn(
         return "new_question"
 
     lowered = normalized.casefold()
+    if _looks_like_expand_request(lowered):
+        return "expand_answer"
+    if _looks_like_follow_up_request(lowered):
+        return "follow_up"
 
     if _EXPAND_REQUEST_RE.search(normalized) or _contains_any(lowered, ("дополни", "продолжи", "что еще", "ещё", "еще", "подробнее", "раскрой")):
         return "expand_answer"
@@ -358,7 +367,7 @@ def _classify_conversation_turn(
     ):
         return "follow_up"
 
-    if len(normalized.split()) <= 5:
+    if len(normalized.split()) <= 8:
         return "follow_up"
     return "new_question"
 
@@ -375,9 +384,15 @@ def _build_effective_query(
 
     parts: list[str] = []
     memory = chat_session.memory
+    explicit_document_override = _extract_document_code_hints(query_text)
     if memory.conversation_summary:
         parts.append(f"Контекст беседы: {memory.conversation_summary}")
-    if memory.active_document_hints:
+    if explicit_document_override:
+        parts.append(
+            "Requested document override: "
+            f"{', '.join(explicit_document_override)}. Keep the current technical topic, but prefer these documents."
+        )
+    elif memory.active_document_hints:
         parts.append(f"Документы в фокусе: {', '.join(memory.active_document_hints)}.")
     if memory.active_locator_hints and query_kind in {"clarify", "expand_answer", "follow_up"}:
         parts.append(f"Локаторы в фокусе: {', '.join(memory.active_locator_hints)}.")
@@ -438,6 +453,8 @@ def _is_context_shift(*, query_text: str, chat_session: Stage2AChatSessionDTO) -
         if normalized
     }
     if not query_documents:
+        return False
+    if len(query_text.split()) <= 8 and not _has_substantive_topic_outside_document_codes(query_text):
         return False
     return query_documents.isdisjoint(active_documents)
 
@@ -779,11 +796,86 @@ def _contains_any(text: str, needles: tuple[str, ...]) -> bool:
     return any(needle in text for needle in needles)
 
 
+def _has_substantive_topic_outside_document_codes(text: str) -> bool:
+    stripped = _DOCUMENT_CODE_HINT_RE.sub(" ", text.casefold())
+    stripped = re.sub(r"[^\w\s]", " ", stripped)
+    tokens = [token for token in stripped.split() if len(token) > 2]
+    filler_tokens = {
+        "что",
+        "как",
+        "для",
+        "про",
+        "это",
+        "этой",
+        "этому",
+        "этим",
+        "нему",
+        "ней",
+        "ним",
+        "по",
+        "а",
+        "еще",
+        "ещё",
+    }
+    return any(token not in filler_tokens for token in tokens)
+
+
+def _looks_like_follow_up_request(text: str) -> bool:
+    return _contains_any(
+        text,
+        (
+            "а что",
+            "а как",
+            "а для",
+            "по нему",
+            "по ней",
+            "по ним",
+            "по этому",
+            "по этой",
+            "по этим",
+            "что по ",
+            "что по сп",
+        ),
+    )
+
+
+def _looks_like_expand_request(text: str) -> bool:
+    return _contains_any(
+        text,
+        (
+            "дополни",
+            "продолжи",
+            "что еще",
+            "ещё",
+            "еще",
+            "подробнее",
+            "раскрой",
+            "дай конкретную",
+            "конкретную информацию",
+            "при каких значениях",
+            "какие значения",
+        ),
+    )
+
+
+def _extract_document_code_hints(text: str) -> list[str]:
+    values: list[str] = []
+    seen: set[str] = set()
+    for match in _DOCUMENT_CODE_HINT_RE.finditer(text):
+        value = normalize_document_code(match.group(0))
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        values.append(value)
+    return values
+
+
 def _build_event(
     event_type: Literal[
         "query_received",
         "query_rewritten",
         "controller_started",
+        "controller_reasoning",
         "tool_started",
         "tool_finished",
         "evidence_updated",
@@ -811,9 +903,21 @@ def _build_controller_trajectory_events(result: ControllerAgentResult) -> list[R
     events: list[RuntimeEventDTO] = []
     ordered_step_ids = sorted({key.rsplit("_", 1)[-1] for key in result.trajectory if "_" in key})
     for step_id in ordered_step_ids:
+        thought_key = f"thought_{step_id}"
         tool_name_key = f"tool_name_{step_id}"
         observation_key = f"observation_{step_id}"
         tool_name = str(result.trajectory.get(tool_name_key, "unknown_tool"))
+        if thought_key in result.trajectory:
+            events.append(
+                _build_event(
+                    "controller_reasoning",
+                    "Controller recorded one reasoning step.",
+                    payload={
+                        "step_id": step_id,
+                        "summary": _normalize_inline_text(str(result.trajectory[thought_key]), limit=260),
+                    },
+                )
+            )
         if tool_name_key in result.trajectory:
             events.append(
                 _build_event(

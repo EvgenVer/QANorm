@@ -9,7 +9,7 @@ import streamlit as st
 from qanorm.stage2a.config import get_stage2a_config
 from qanorm.stage2a.contracts import RuntimeEventDTO, Stage2AChatSessionDTO, Stage2AConversationalQueryRequest
 from qanorm.stage2a.runtime import Stage2AConversationalQueryResult, Stage2AQueryResult, Stage2ARuntime
-from qanorm.stage2a.ui.rendering import format_runtime_event, iter_markdown_chunks
+from qanorm.stage2a.ui.rendering import format_panel_value, format_runtime_event, iter_markdown_chunks
 from qanorm.stage2a.ui.session_state import (
     create_new_ui_session,
     ensure_ui_sessions,
@@ -177,7 +177,7 @@ def _render_result_panels(result_payload: Stage2AQueryResult | dict[str, Any]) -
 
     st.caption(f"Режим ответа: `{answer['mode']}`")
 
-    with st.expander("Evidence", expanded=True):
+    with st.expander("Evidence", expanded=False):
         if not answer["evidence"]:
             st.write("Подтвержденные evidence не выбраны.")
         for item in answer["evidence"]:
@@ -188,10 +188,10 @@ def _render_result_panels(result_payload: Stage2AQueryResult | dict[str, Any]) -
                 f"Текст: {item['text']}"
             )
 
-    with st.expander("Ограничения", expanded=bool(answer["limitations"])):
+    with st.expander("Ограничения", expanded=False):
         if answer["limitations"]:
             for item in answer["limitations"]:
-                st.write(f"- {item}")
+                st.markdown(f"- {format_panel_value(item)}")
         else:
             st.write("Явные ограничения не зафиксированы.")
 

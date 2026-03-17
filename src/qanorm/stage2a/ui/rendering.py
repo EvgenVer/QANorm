@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import json
+from typing import Any
 
 from qanorm.stage2a.contracts import RuntimeEventDTO
 
@@ -25,11 +27,27 @@ def format_runtime_event(event: RuntimeEventDTO) -> str:
     return f"- `{marker}:{event.event_type}` {event.message}{suffix}"
 
 
+def format_panel_value(value: Any) -> str:
+    """Render nested payload values into one readable string for UI panels."""
+
+    if isinstance(value, dict):
+        if "text" in value and isinstance(value["text"], str):
+            return value["text"]
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    if isinstance(value, list):
+        return ", ".join(format_panel_value(item) for item in value)
+    return str(value)
+
+
 def _event_details(event: RuntimeEventDTO) -> str:
     if event.event_type == "query_rewritten":
         effective_query = str(event.payload.get("effective_query", "")).strip()
         if effective_query:
             return f"`effective_query={_compact_text(effective_query, limit=120)}`"
+    if event.event_type == "controller_reasoning":
+        summary = str(event.payload.get("summary", "")).strip()
+        if summary:
+            return f"`{_compact_text(summary, limit=160)}`"
     if event.event_type in {"tool_started", "tool_finished"}:
         tool_name = str(event.payload.get("tool_name", "")).strip()
         if event.event_type == "tool_finished":
