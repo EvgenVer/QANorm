@@ -2,136 +2,144 @@
 
 ## 1. Preparation
 
-1. Start PostgreSQL and the UI:
+1. Start PostgreSQL:
    - `docker start qanorm-pg16`
-   - `streamlit run src/qanorm/stage2a/ui/app.py`
-2. Open the local Streamlit URL.
-3. Confirm the page shows:
-   - header `QANorm Stage 2A`;
-   - sidebar with session controls;
-   - an empty chat and input box.
+2. Start the UI:
+   - `.\.venv\Scripts\python.exe -m streamlit run src/qanorm/stage2a/ui/app.py`
+3. Open the local Streamlit URL.
 
 Expected result:
-- the page loads without traceback;
-- the sidebar shows one local chat session by default;
-- the current session starts with empty transcript and empty debug state.
+- the page loads without traceback
+- the sidebar shows local session controls
+- one empty local chat session exists by default
 
-## 2. Question -> Follow-up -> Clarification
+## 2. First question quality
 
 Steps:
-1. Ask: `Что СП 63 говорит про максимальный шаг арматуры в плитах?`
-2. After the answer finishes, ask: `А для плит толщиной больше 150 мм?`
-3. Then ask: `Какой именно пункт это устанавливает?`
+1. Ask a direct reinforced-concrete question, for example:
+   - `Что СП 63 говорит про защитный слой арматуры?`
+2. Inspect the first answer.
 
 Check:
-- the second question is treated as a continuation, not as a brand new topic;
-- the third question reuses the active document and locator hints;
-- the final answer contains a more specific citation than the first answer;
-- `Evidence` is updated between turns.
+- the answer is grounded in `SP 63.13330.2018`, not in `SP 52-101-2003`
+- the answer is not flattened into one line
+- `Evidence`, `Ограничения`, and `Debug Trace` are collapsed by default
 
 Expected result:
-- the agent stays inside the same document family unless the user explicitly changes topic;
-- follow-up questions reuse session memory and can refine the evidence pack;
-- locator or heading information becomes more specific after the clarification.
+- the first answer quality is at least as good as before the conversational changes
+- no regression toward older legacy reinforced-concrete standards
 
-## 3. Partial -> Expand Answer
+## 3. Follow-up and document override
 
 Steps:
-1. Ask a broad question that normally produces `partial`, for example:
-   `Какие требования к рабочим швам в бетоне?`
-2. After a partial answer, ask:
-   `Дополни ответ и приведи больше контекста`
+1. Ask:
+   - `Что по защитному слою арматуры?`
+2. Then ask:
+   - `Какое минимальное значение толщины защитного слоя?`
+3. Then ask:
+   - `А что по СП 63?`
 
 Check:
-- the second turn uses the previous answer as context;
-- the new answer is longer or more specific than the original one;
-- the evidence panel grows or changes, instead of simply repeating the same snippet;
-- if the answer stays partial, the limitations explain what is still missing.
+- the second and third turns are treated as follow-ups
+- the third turn keeps the technical topic and changes the preferred document family
+- the agent does not reset to a brand new unrelated topic
 
 Expected result:
-- the follow-up can promote a previous partial answer to a fuller answer;
-- the agent performs another retrieval pass instead of returning the old answer verbatim.
+- short follow-ups such as `А что по СП 63?` preserve context instead of starting over
 
-## 4. New Session
+## 4. Expand-answer turn
 
 Steps:
-1. In an active chat with existing messages, click `Новая сессия`.
-2. Verify the UI switches to a new local session.
+1. Ask a broad question that normally produces `partial`
+2. Then ask:
+   - `Дай конкретную информацию при каких значениях сколько`
 
 Check:
-- the transcript area becomes empty;
-- the new session has no inherited memory, no evidence panel, and no last result;
-- the previous session still exists in the sidebar.
+- the next turn performs another retrieval pass
+- the evidence pack is updated instead of just repeating the old answer
+- the answer becomes more specific when enough context is available
 
 Expected result:
-- a new isolated chat starts from zero;
-- the prior session is preserved and can be reopened later in the same browser session.
+- a partial answer can be expanded by follow-up turns inside the same local session
 
-## 5. Two Independent Sessions in One UI
+## 5. New local session and reset
 
 Steps:
-1. In session A, ask a question about `СП 63`.
-2. Create session B and ask a question about fire safety or evacuation.
-3. Switch back to session A.
+1. In an active chat with messages, click `Новая сессия`
+2. Verify the transcript becomes empty
+3. Switch back to the previous session
+4. Click `Сбросить текущую сессию` only in the active session
 
 Check:
-- session A still contains only the concrete/reinforcement thread;
-- session B contains only the fire-safety thread;
-- switching sessions does not mix chat history, evidence, debug trace, or limitations.
+- the new session starts from zero
+- the previous session remains available until explicitly reset
+- resetting one session does not affect another local session
 
 Expected result:
-- local sessions are isolated from each other inside one browser session;
-- active document hints from session A do not leak into session B and vice versa.
+- local multi-session behavior works inside one browser session
 
-## 6. Debug Trace Streams Into Chat
+## 6. Session isolation
 
 Steps:
-1. Ask any non-trivial question.
-2. While the answer is being generated, watch the assistant message area.
+1. In session A ask a reinforced-concrete question
+2. Create session B and ask a fire-safety question
+3. Switch back and forth between sessions
 
 Check:
-- a debug block appears before the final answer is ready;
-- tool steps and evidence updates appear during generation;
-- after completion the debug block collapses by default;
-- the user can reopen it manually.
+- session A keeps only the reinforced-concrete thread
+- session B keeps only the fire-safety thread
+- evidence, limitations, and debug trace do not leak between sessions
 
 Expected result:
-- the runtime trace is visible during answer generation;
-- the final answer stays readable and the debug trace remains available on demand.
+- local sessions are isolated from each other
 
-## 7. Formatting Is Correct Without a Second Question
+## 7. Streamed debug trace
 
 Steps:
-1. Ask a question that produces a multi-paragraph answer with bullets or citations.
-2. Do not ask anything else.
-3. Inspect the answer immediately after the stream completes.
+1. Ask any non-trivial question
+2. Watch the assistant area while the answer is being generated
 
 Check:
-- line breaks are preserved;
-- bullet lists render as lists;
-- citations do not appear as a single flattened line;
-- the final render is already correct before the next rerun.
+- runtime events appear before the final answer is ready
+- controller reasoning is visible in the streamed trace
+- after completion the trace stays available in a collapsed expander
 
 Expected result:
-- the answer formatting is correct immediately after the first render;
-- no second prompt is required to “fix” markdown layout.
+- the debug trace is informative during generation, not only after the answer
 
-## 8. Failure Signals
+## 8. Formatting
 
-The scenario is failed if at least one of these happens:
-- the UI crashes with traceback;
-- a follow-up is treated as an unrelated new question without explicit topic change;
-- `Новая сессия` clears another session;
-- two local sessions show mixed messages or mixed evidence;
-- debug trace does not appear until the answer is already complete;
-- markdown is flattened into one line until the next user message.
+Steps:
+1. Ask a question that produces a multi-paragraph answer
+2. Wait until the answer finishes
+3. Do not ask a second question yet
 
-## 9. Minimum Acceptance Result
+Check:
+- paragraphs and line breaks are already rendered correctly
+- limitations do not show raw dicts like `{'text': ...}`
+- no mojibake or unreadable nested payloads appear in UI panels
+
+Expected result:
+- formatting is correct immediately after the first render
+
+## 9. Failure signals
+
+The scenario fails if any of the following happens:
+- UI crashes with traceback
+- first-answer quality regresses to older legacy documents
+- a short follow-up loses the previous topic
+- `А что по СП 63?` behaves like a brand new question
+- raw dict payloads appear in limitations
+- debug trace does not show controller reasoning
+- sessions leak into each other
+
+## 10. Minimum acceptance result
 
 Stage 2B manual acceptance passes if:
-- follow-up and clarification questions reuse session context correctly;
-- a partial answer can be expanded in a later turn;
-- `Новая сессия` creates a clean local chat without touching others;
-- two local sessions remain isolated in one browser session;
-- debug trace streams during generation and collapses after completion;
-- markdown formatting is correct immediately after the streamed answer finishes.
+- first-answer quality is acceptable and stable
+- follow-up turns keep context
+- document override follow-ups keep topic and adjust preferred family
+- new/reset session controls work
+- local sessions stay isolated
+- streamed debug trace is visible and useful
+- final formatting is correct without asking another question

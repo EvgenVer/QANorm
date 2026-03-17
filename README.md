@@ -1,65 +1,66 @@
 # QANorm
 
-QANorm сейчас находится в состоянии `Stage 2A MVP`:
+QANorm is a local normative QA system for Russian construction standards.
 
-- `Stage 1` хранит локальную нормативную базу и ingestion pipeline;
-- `Stage 2A` строит agentic RAG поверх локальной базы;
-- интерфейс MVP работает через `Streamlit`;
-- dense retrieval использует `retrieval_units` и `pgvector`.
+Current state:
+- `Stage 1`: corpus ingestion, normalization, and storage in PostgreSQL
+- `Stage 2A`: agentic retrieval and grounded answers over the local corpus
+- `Stage 2B`: conversational memory inside one browser session, local multi-session chat UI, and streamed debug trace
 
-Основные документы проекта:
+Core project documents:
+- `SPECIFICATION.md`
+- `Plan.md`
+- `Tasks.md`
 
-- [SPECIFICATION.md](SPECIFICATION.md)
-- [Plan.md](Plan.md)
-- [Tasks.md](Tasks.md)
+## Stack
 
-## Что есть в репозитории
+- Python `3.12`
+- PostgreSQL `16` + `pgvector`
+- Streamlit UI
+- DSPy only in the agent layer
+- Custom retrieval over `document_aliases`, `document_nodes`, and `retrieval_units`
+- Gemini API for controller/composer/verifier/embeddings
 
-- ingestion и нормализация документов до `document_nodes`;
-- derived retrieval layer: `document_aliases` и `retrieval_units`;
-- backfill embeddings для `retrieval_units`;
-- hybrid retrieval engine: explicit document, locator, lexical, dense, rerank;
-- DSPy-based `ControllerAgent`, `Composer`, `GroundingVerifier`;
-- `Streamlit` MVP UI.
+## What is implemented
 
-## Требования
+- Stage 1 ingestion pipeline and normalized local corpus
+- Derived retrieval data:
+  - `document_aliases`
+  - `retrieval_units`
+- Dense retrieval with embeddings in PostgreSQL
+- DSPy-based `ControllerAgent`, `Composer`, `GroundingVerifier`
+- Conversational UI with:
+  - local session memory
+  - multiple local chat sessions in one browser session
+  - new/reset session controls
+  - streamed runtime/debug events in chat
+
+## Current quality snapshot
+
+Latest detached eval run on the full `150` question set:
+- `document hit@3 = 0.86`
+- `locator hit@5 = 1.00`
+- `grounded answer rate = 0.98`
+- `unsupported claim rate = 0.00`
+- `partial answer rate = 0.0867`
+- `expected mode match rate = 0.72`
+- `wrong document rate = 0.00`
+
+This means the system is usable for manual testing, but there are still known quality gaps in some clusters such as `GOST 27751`, fire-safety families, and a subset of reinforced-concrete follow-up cases.
+
+## Requirements
 
 - Windows PowerShell
 - Python `3.12`
 - Docker Desktop
-- PostgreSQL `16` с расширением `pgvector`
-- Tesseract OCR в системе, если нужен OCR fallback
-- рабочий Gemini API key
+- Gemini API key
 
-## Быстрый запуск с нуля
+Optional:
+- Tesseract OCR if OCR fallback is needed for ingestion
 
-### 1. Поднять PostgreSQL в Docker
+## Setup
 
-Если контейнера еще нет:
-
-```powershell
-docker run -d `
-  --name qanorm-pg16 `
-  -e POSTGRES_DB=qanorm `
-  -e POSTGRES_USER=postgres `
-  -e POSTGRES_PASSWORD=postgres `
-  -p 5432:5432 `
-  pgvector/pgvector:pg16
-```
-
-Если контейнер уже создан, но остановлен:
-
-```powershell
-docker start qanorm-pg16
-```
-
-Проверить, что контейнер поднялся:
-
-```powershell
-docker ps
-```
-
-### 2. Создать и заполнить виртуальное окружение
+### 1. Create and populate the virtual environment
 
 ```powershell
 python -m venv .venv
@@ -68,15 +69,13 @@ python -m pip install --upgrade pip
 pip install -e .[dev]
 ```
 
-### 3. Создать `.env`
-
-Скопируйте шаблон:
+### 2. Create `.env`
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Минимально заполните в `.env`:
+Minimum required values:
 
 ```dotenv
 QANORM_APP_ENV=local
@@ -90,253 +89,152 @@ QANORM_DSPY_CACHE_DIR=.cache/dspy
 QANORM_GEMINI_API_KEY=YOUR_REAL_KEY
 ```
 
-Назначение переменных:
+### 3. Start PostgreSQL
 
-- `QANORM_DB_URL` — строка подключения к PostgreSQL
-- `QANORM_RAW_STORAGE_PATH` — каталог raw-файлов и служебных stage2a state/log
-- `QANORM_STAGE2A_CONFIG_PATH` — путь к `configs/stage2a.yaml`
-- `QANORM_GEMINI_API_BASE_URL` — Gemini REST base URL
-- `QANORM_GEMINI_API_KEY` — ключ Gemini
-- `QANORM_DSPY_CACHE_DIR` — каталог DSPy cache
-
-### 4. Применить миграции
+If the container does not exist yet:
 
 ```powershell
-qanorm init-db
+docker run -d `
+  --name qanorm-pg16 `
+  -e POSTGRES_DB=qanorm `
+  -e POSTGRES_USER=postgres `
+  -e POSTGRES_PASSWORD=postgres `
+  -p 5432:5432 `
+  pgvector/pgvector:pg16
 ```
 
-Проверка:
-
-```powershell
-qanorm health-check
-qanorm check-config
-```
-
-## Типовой порядок запуска проекта
-
-Ниже два сценария:
-
-- первый запуск с пустой БД;
-- повторный запуск, когда база уже наполнена.
-
-### Сценарий A. Первый запуск с пустой БД
-
-#### Шаг 1. Загрузить Stage 1 corpus
-
-Запустить seed crawl:
-
-```powershell
-qanorm crawl-seeds
-```
-
-Запустить worker ingestion:
-
-```powershell
-qanorm run-worker
-```
-
-Если нужен точечный refresh:
-
-```powershell
-qanorm refresh-document "СП 63.13330.2018"
-qanorm update-document "СП 63.13330.2018"
-```
-
-Посмотреть метрики ingestion:
-
-```powershell
-qanorm ingestion-metrics
-qanorm ingestion-report
-```
-
-#### Шаг 2. Построить derived retrieval data
-
-Полная пересборка:
-
-```powershell
-qanorm stage2a-rebuild-derived
-```
-
-Или в фоне:
-
-```powershell
-qanorm stage2a-derived-start --parallel-workers 4
-qanorm stage2a-derived-status
-```
-
-Отдельные команды:
-
-```powershell
-qanorm stage2a-build-aliases
-qanorm stage2a-build-units
-```
-
-#### Шаг 3. Оценить объем embeddings
-
-```powershell
-qanorm stage2a-embed-preflight
-```
-
-#### Шаг 4. Сгенерировать embeddings для `retrieval_units`
-
-Простой запуск:
-
-```powershell
-qanorm stage2a-embed-start
-```
-
-Фоновый параллельный запуск:
-
-```powershell
-qanorm stage2a-embed-start --parallel-workers 2
-qanorm stage2a-embed-status
-```
-
-Если backfill уже шел раньше, та же команда продолжит его по state-файлам.
-
-### Сценарий B. Повторный запуск, когда база уже готова
-
-Если Stage 1 corpus, derived data и embeddings уже построены, обычно достаточно:
+If the container already exists:
 
 ```powershell
 docker start qanorm-pg16
-.\.venv\Scripts\Activate.ps1
-qanorm check-config
 ```
 
-Если нужно убедиться, что embeddings полностью готовы:
+### 4. Apply migrations
 
 ```powershell
-qanorm stage2a-embed-status
+.\.venv\Scripts\python.exe -m qanorm.cli.main init-db
 ```
 
-## Запуск Stage 2A UI
+### 5. Check configuration
 
-Запускать из корня проекта:
+```powershell
+.\.venv\Scripts\python.exe -m qanorm.cli.main check-config
+.\.venv\Scripts\python.exe -m qanorm.cli.main health-check
+```
+
+## Data preparation
+
+### Stage 1 ingestion
+
+```powershell
+.\.venv\Scripts\python.exe -m qanorm.cli.main crawl-seeds
+.\.venv\Scripts\python.exe -m qanorm.cli.main run-worker
+```
+
+Useful commands:
+
+```powershell
+.\.venv\Scripts\python.exe -m qanorm.cli.main refresh-document "SP 63.13330.2018"
+.\.venv\Scripts\python.exe -m qanorm.cli.main update-document "SP 63.13330.2018"
+.\.venv\Scripts\python.exe -m qanorm.cli.main ingestion-metrics
+.\.venv\Scripts\python.exe -m qanorm.cli.main ingestion-report
+```
+
+### Stage 2A derived retrieval data
+
+One-shot rebuild:
+
+```powershell
+.\.venv\Scripts\python.exe -m qanorm.cli.main stage2a-rebuild-derived
+```
+
+Detached parallel rebuild:
+
+```powershell
+.\.venv\Scripts\python.exe -m qanorm.cli.main stage2a-derived-start --parallel-workers 4
+.\.venv\Scripts\python.exe -m qanorm.cli.main stage2a-derived-status
+```
+
+### Stage 2A embeddings
+
+Preflight:
+
+```powershell
+.\.venv\Scripts\python.exe -m qanorm.cli.main stage2a-embed-preflight
+```
+
+Detached embedding backfill:
+
+```powershell
+.\.venv\Scripts\python.exe -m qanorm.cli.main stage2a-embed-start --parallel-workers 2
+.\.venv\Scripts\python.exe -m qanorm.cli.main stage2a-embed-status
+```
+
+## Run the UI
 
 ```powershell
 .\.venv\Scripts\python.exe -m streamlit run src/qanorm/stage2a/ui/app.py --server.address 127.0.0.1 --server.port 8501
 ```
 
-После запуска открыть:
+Open:
 
 ```text
 http://127.0.0.1:8501
 ```
 
-Что должно работать в UI:
+Notes:
+- the current UI title comes from `configs/stage2a.yaml` and may still say `QANorm Stage 2A`
+- chat sessions are local to the current browser session only
+- reloading the page starts from a clean local state
 
-- ввод инженерного нормативного вопроса;
-- ответ с evidence;
-- citations и limitations;
-- debug trace шагов `ReAct-lite`.
+## Stage 2B behavior
 
-## Полезные CLI-команды
+Implemented conversational features:
+- follow-up and clarification turns reuse local session memory
+- users can create a new local session from the sidebar
+- users can reset only the active session
+- runtime/debug events are streamed during answer generation
+- evidence, limitations, and debug panels are collapsed by default after the answer
 
-### Stage 1
+Not implemented in Stage 2B:
+- login/auth
+- persistent chat history in PostgreSQL
+- restoring sessions after page reload
 
-```powershell
-qanorm check-config
-qanorm health-check
-qanorm crawl-seeds
-qanorm run-worker
-qanorm reindex
-qanorm ingestion-metrics
-qanorm ingestion-report
-qanorm refresh-document "СП 20.13330.2016"
-qanorm update-document "СП 20.13330.2016"
-```
+## Eval commands
 
-### Stage 2A derived data
+Single process:
 
 ```powershell
-qanorm stage2a-build-aliases
-qanorm stage2a-build-units
-qanorm stage2a-rebuild-derived
-qanorm stage2a-derived-start --parallel-workers 4
-qanorm stage2a-derived-status
+.\.venv\Scripts\python.exe -m qanorm.cli.main stage2a-eval --questions-path eval/stage2a/questions.jsonl
 ```
 
-### Stage 2A embeddings
+Detached parallel eval:
 
 ```powershell
-qanorm stage2a-embed-preflight
-qanorm stage2a-embed-start --parallel-workers 2
-qanorm stage2a-embed-status
+.\.venv\Scripts\python.exe -m qanorm.cli.main stage2a-eval-start --questions-path eval/stage2a/questions.jsonl --parallel-workers 4 --manifest-path .cache/stage2a_eval/eval_manifest.json
+.\.venv\Scripts\python.exe -m qanorm.cli.main stage2a-eval-status --manifest-path .cache/stage2a_eval/eval_manifest.json
 ```
 
-## Где лежат служебные state и log файлы
+## Manual testing
 
-Stage 2A backfill пишет state и log рядом с `QANORM_RAW_STORAGE_PATH`, в каталог:
+Manual smoke checklist for Stage 2B:
+- `docs/stage2b-streamlit-smoke.md`
 
-```text
-<parent of QANORM_RAW_STORAGE_PATH>\stage2a\
-```
+Readiness reports:
+- `docs/stage2a-mvp-readiness-20260316.md`
+- `docs/stage2b-mvp-readiness-20260317.md`
 
-Там появляются:
+## Shutdown
 
-- `derived_backfill_state*.json`
-- `derived_backfill*.log`
-- `embedding_backfill_state*.json`
-- `embedding_backfill*.log`
-- `*_manifest.json`
-
-## Как понять, что система готова к работе
-
-Минимальный чек-лист:
-
-1. `docker ps` показывает `qanorm-pg16`.
-2. `qanorm check-config` проходит без ошибок.
-3. `qanorm init-db` уже применен.
-4. В БД есть документы и `retrieval_units`.
-5. `qanorm stage2a-embed-status` показывает, что `pending` нет.
-6. `streamlit run ...` поднимает UI.
-
-## Тесты
-
-Полный прогон:
+Stop UI:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/unit tests/integration -q
+Get-Process | Where-Object { $_.ProcessName -eq 'python' -and $_.Path -like '*QANorm*' } | Stop-Process -Force
 ```
 
-Только retrieval:
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest tests/unit/test_stage2a_retrieval_engine.py tests/integration/test_stage2a_retrieval_integration.py -q
-```
-
-## Остановка
-
-Остановить UI:
-
-- `Ctrl+C` в окне `streamlit`
-
-Остановить PostgreSQL контейнер:
+Stop PostgreSQL container:
 
 ```powershell
 docker stop qanorm-pg16
 ```
-
-Остановить все контейнеры:
-
-```powershell
-docker stop $(docker ps -q)
-```
-
-На PowerShell, если нужна совместимая форма:
-
-```powershell
-$ids = docker ps -q
-if ($ids) { docker stop $ids }
-```
-
-## Текущее состояние разработки
-
-На данный момент:
-
-- `Stage 1` сохранен и рабочий;
-- `Stage 2A` реализован как `DSPy-hybrid` MVP;
-- dense embeddings строятся и используются на уровне `retrieval_units`, а не `document_nodes`;
-- запуск проекта и операционные команды описаны в этом README;
-- детальный план и прогресс ведутся в [Tasks.md](Tasks.md).
